@@ -75,14 +75,23 @@ def create_app(namer_config: Path, report_output_dir: Path) -> FastAPI:
             subprocess.run(["systemctl", action, _SERVICE], capture_output=True)
         return RedirectResponse("/", status_code=303)
 
+    def _do_generate(anonymize: bool) -> None:
+        paths = read_namer_paths(namer_config)
+        matches = collect_failed_matches(paths["failed_dir"])
+        render_report(matches, report_output_dir, fmt="both", anonymize=anonymize)
+
     @app.post("/report/generate")
-    async def generate_report(request: Request):
-        form = await request.form()
-        anonymize = form.get("anonymize") == "1"
+    async def generate_report():
         try:
-            paths = read_namer_paths(namer_config)
-            matches = collect_failed_matches(paths["failed_dir"])
-            render_report(matches, report_output_dir, fmt="both", anonymize=anonymize)
+            _do_generate(anonymize=False)
+        except Exception:
+            pass
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/report/generate/anonymous")
+    async def generate_report_anonymous():
+        try:
+            _do_generate(anonymize=True)
         except Exception:
             pass
         return RedirectResponse("/", status_code=303)
