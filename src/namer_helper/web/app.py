@@ -63,8 +63,7 @@ def create_app(namer_config: Path, report_output_dir: Path) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
-        return templates.TemplateResponse("dashboard.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "dashboard.html", {
             "status": _service_status(),
             "stats": _dir_stats(namer_config),
             "reports": _recent_reports(report_output_dir),
@@ -110,8 +109,7 @@ def create_app(namer_config: Path, report_output_dir: Path) -> FastAPI:
                 ],
                 key=lambda x: x["name"],
             )
-        return templates.TemplateResponse("files.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "files.html", {
             "dir_name": dir_name,
             "files": files,
         })
