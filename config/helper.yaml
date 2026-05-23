@@ -11,6 +11,30 @@ report:
   # Format: markdown, json, both
   format: both
 
+ollama:
+  # Empfohlene Variante: Ollama als eigener Proxmox-LXC
+  # Installer: https://community-scripts.github.io/ProxmoxVE/scripts?id=ollama
+  # Nach der Installation die IP des Ollama-LXC eintragen, z.B.:
+  #   base_url: http://192.168.1.50:11434
+  #
+  # Alternativ lokal (Docker oder direktes Ollama):
+  #   base_url: http://localhost:11434
+  base_url: http://localhost:11434
+
+  # Empfohlene Modelle (lokal via `ollama pull <model>`):
+  #   llama3        — gute Balance, ~4 GB
+  #   mistral       — schnell, ~4 GB
+  #   gemma2        — kompakt, ~5 GB
+  model: llama3
+
+  # Timeout in Sekunden (erhöhen bei großen Modellen oder langsamer Hardware)
+  timeout: 30
+
+  # Ollama-Unterstützung aktivieren (false = Ollama-Befehle werden übersprungen)
+  enabled: false
+
 privacy:
-  # local-only | query-external | contribute
+  # local-only    — nur Namer + lokale StashApp + lokales Ollama, keine externen Abfragen
+  # query-external — externe StashDB/stash-box-Abfragen erlaubt, kein Upload
+  # contribute    — externe Abfragen + optionales Zurückmelden von Fingerprints
   mode: local-only

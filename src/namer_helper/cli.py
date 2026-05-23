@@ -11,6 +11,8 @@ from loguru import logger
 
 from namer_helper.namer_bridge.config_reader import read_namer_paths
 from namer_helper.namer_bridge.log_parser import collect_failed_matches
+from namer_helper.ollama_bridge.analyzer import analyze_filenames
+from namer_helper.ollama_bridge.client import OllamaClient
 from namer_helper.reports.renderer import render_report
 
 
@@ -71,3 +73,82 @@ def report_cmd(namer_config: str, failed_dir: str | None, output_dir: str, fmt: 
     written = render_report(matches, Path(output_dir), fmt=fmt)
     for p in written:
         logger.success(f"Report geschrieben: {p}")
+
+
+@main.command("analyze")
+@click.argument("filenames", nargs=-1, required=False)
+@click.option(
+    "--failed-dir",
+    default=None,
+    help="failed-Verzeichnis — analysiert alle Dateinamen dort",
+)
+@click.option(
+    "--namer-config",
+    default="/etc/namer/namer.cfg",
+    show_default=True,
+    help="Pfad zur namer.cfg (für failed_dir)",
+)
+@click.option(
+    "--ollama-url",
+    default="http://localhost:11434",
+    show_default=True,
+    help="Ollama-Server URL",
+)
+@click.option(
+    "--model",
+    default="llama3",
+    show_default=True,
+    help="Ollama-Modell",
+)
+@click.option(
+    "--timeout",
+    default=30,
+    show_default=True,
+    help="Timeout in Sekunden",
+)
+def analyze_cmd(
+    filenames: tuple[str, ...],
+    failed_dir: str | None,
+    namer_config: str,
+    ollama_url: str,
+    model: str,
+    timeout: int,
+) -> None:
+    """Dateinamen via Ollama analysieren und Suchvorschläge erhalten."""
+    client = OllamaClient(base_url=ollama_url, timeout=timeout)
+
+    if not client.is_available():
+        logger.error(f"Ollama nicht erreichbar unter {ollama_url}")
+        raise click.Abort()
+
+    names: list[str] = list(filenames)
+
+    if not names and failed_dir:
+        from namer_helper.namer_bridge.log_parser import collect_failed_matches
+        matches = collect_failed_matches(Path(failed_dir))
+        names = [m.file_path.name for m in matches]
+    elif not names:
+        config_path = Path(namer_config)
+        if config_path.exists():
+            paths = read_namer_paths(config_path)
+            matches = collect_failed_matches(paths["failed_dir"])
+            names = [m.file_path.name for m in matches]
+
+    if not names:
+        logger.warning("Keine Dateinamen zum Analysieren gefunden.")
+        return
+
+    logger.info(f"Analysiere {len(names)} Dateinamen mit {model} via {ollama_url}")
+    results = analyze_filenames(names, client, model=model)
+
+    for r in results:
+        if r.error:
+            logger.error(f"{r.filename}: {r.error}")
+            continue
+        logger.info(f"\n{'─' * 60}")
+        logger.info(f"Datei:    {r.filename}")
+        logger.info(f"Titel:    {r.cleaned_name}")
+        logger.info(f"Score:    {r.confidence:.2f}  →  {r.recommended_action}")
+        logger.info(f"Grund:    {r.reason}")
+        for i, q in enumerate(r.search_queries, 1):
+            logger.info(f"Suche {i}:  {q}")

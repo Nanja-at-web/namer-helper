@@ -7,6 +7,7 @@ dependencies = [
     "loguru>=0.7",
     "pyyaml>=6.0",
     "click>=8.1",
+    "requests>=2.32",
 ]
 
 [project.scripts]
