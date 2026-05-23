@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %} — Mounts{% endblock %}
+
+{% block content %}
+
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Netzlaufwerke / Mounts</h1>
+
+<!-- Bestehende Mounts -->
+{% if mounts %}
+<div class="bg-white rounded-lg shadow overflow-hidden mb-8">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+      <tr>
+        <th class="text-left px-4 py-3">Bezeichnung</th>
+        <th class="text-left px-4 py-3">Quelle</th>
+        <th class="text-left px-4 py-3">Ziel</th>
+        <th class="text-center px-4 py-3">Status</th>
+        <th class="text-right px-4 py-3">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100" id="mount-table">
+      {% for entry in mounts %}
+      {% set m = entry.config %}
+      <tr id="mrow-{{ m.id }}">
+        <td class="px-4 py-3 text-gray-700">
+          {{ m.label if m.label else m.protocol | upper }}
+        </td>
+        <td class="px-4 py-3 font-mono text-gray-500 text-xs">
+          {% if m.protocol == "nfs" %}
+            {{ m.host }}:{{ m.share }}
+          {% else %}
+            \\{{ m.host }}\{{ m.share }}
+            {% if m.username %}<span class="text-gray-400"> ({{ m.username }})</span>{% endif %}
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 font-mono text-gray-500 text-xs">{{ m.target }}</td>
+        <td class="px-4 py-3 text-center" id="status-{{ m.id }}">
+          {% if entry.mounted %}
+            <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+            <span class="text-green-600 text-xs ml-1">Verbunden</span>
+          {% else %}
+            <span class="inline-block w-2 h-2 rounded-full bg-gray-300"></span>
+            <span class="text-gray-400 text-xs ml-1">Getrennt</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right whitespace-nowrap">
+          {% if entry.mounted %}
+          <button onclick="doUnmount('{{ m.id }}')"
+            class="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-xs px-3 py-1 rounded mr-1">
+            Trennen
+          </button>
+          {% else %}
+          <button onclick="doMount('{{ m.id }}')"
+            class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded mr-1">
+            Verbinden
+          </button>
+          {% endif %}
+          <button onclick="doDelete('{{ m.id }}')"
+            class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-3 py-1 rounded">
+            Entfernen
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-8 text-blue-700 text-sm">
+  Noch keine Netzlaufwerke konfiguriert. Unten einen neuen Mount hinzufügen.
+</div>
+{% endif %}
+
+<!-- Neuen Mount hinzufügen -->
+<div class="bg-white rounded-lg shadow p-6">
+  <h2 class="font-semibold text-gray-700 mb-4">Neues Netzlaufwerk hinzufügen</h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Protokoll</label>
+      <select id="f-protocol" onchange="toggleSmbFields()"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <option value="smb">SMB / CIFS (Windows-Freigabe, QNAP Standard)</option>
+        <option value="nfs">NFS</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Bezeichnung (optional)</label>
+      <input id="f-label" type="text" placeholder="z.B. QNAP Watch-Ordner"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">NAS IP-Adresse / Hostname</label>
+      <input id="f-host" type="text" placeholder="192.168.1.x"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1"
+             id="share-label">Freigabename (SMB-Ordnername auf dem NAS)</label>
+      <input id="f-share" type="text" placeholder="z.B. namer-watch"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+
+    <div id="smb-fields">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Benutzername (NAS)</label>
+      <input id="f-username" type="text" placeholder="admin"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+
+    <div id="smb-fields-pw">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Passwort</label>
+      <input id="f-password" type="password"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+
+    <div class="md:col-span-2">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Zielverzeichnis im Container</label>
+      <div class="flex gap-2">
+        <select id="f-target-select" onchange="updateTarget()"
+          class="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <option value="/var/lib/namer/watch">watch/ — neue Dateien für Namer</option>
+          <option value="/var/lib/namer/failed">failed/ — fehlgeschlagene Dateien</option>
+          <option value="/var/lib/namer/dest">dest/ — umbenannte Dateien</option>
+          <option value="/var/lib/namer/work">work/ — temporäres Arbeitsverzeichnis</option>
+          <option value="custom">Eigener Pfad…</option>
+        </select>
+        <input id="f-target" type="text" value="/var/lib/namer/watch"
+          class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      </div>
+    </div>
+
+  </div>
+
+  <div id="error-msg" class="hidden mt-3 text-red-600 text-sm bg-red-50 rounded p-3"></div>
+
+  <div class="mt-5 flex gap-3">
+    <button onclick="addMount()"
+      class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-5 py-2 rounded font-medium">
+      Speichern &amp; Verbinden
+    </button>
+    <button onclick="addMountOnly()"
+      class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-5 py-2 rounded">
+      Nur speichern
+    </button>
+  </div>
+
+  <p class="mt-3 text-xs text-gray-400">
+    Zugangsdaten werden lokal in <code>/etc/namer-helper/mounts.json</code> gespeichert (nur root lesbar).
+  </p>
+</div>
+
+<script>
+function toggleSmbFields() {
+  const isSmb = document.getElementById('f-protocol').value === 'smb';
+  document.getElementById('smb-fields').style.display = isSmb ? '' : 'none';
+  document.getElementById('smb-fields-pw').style.display = isSmb ? '' : 'none';
+  document.getElementById('share-label').textContent = isSmb
+    ? 'Freigabename (SMB-Ordnername auf dem NAS)'
+    : 'NFS-Exportpfad (z.B. /volume1/namer)';
+}
+
+function updateTarget() {
+  const sel = document.getElementById('f-target-select').value;
+  if (sel !== 'custom') {
+    document.getElementById('f-target').value = sel;
+  }
+}
+
+function getFormData() {
+  return {
+    protocol: document.getElementById('f-protocol').value,
+    label:    document.getElementById('f-label').value,
+    host:     document.getElementById('f-host').value,
+    share:    document.getElementById('f-share').value,
+    username: document.getElementById('f-username').value,
+    password: document.getElementById('f-password').value,
+    target:   document.getElementById('f-target').value,
+  };
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function addMount() {
+  const data = getFormData();
+  const res = await fetch('/mounts/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!json.ok) { showError(json.error); return; }
+
+  // Mount immediately
+  const saved = await fetch('/mounts');
+  location.reload();
+}
+
+async function addMountOnly() {
+  const data = getFormData();
+  const res = await fetch('/mounts/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!json.ok) { showError(json.error); return; }
+  location.reload();
+}
+
+async function doMount(id) {
+  const res = await fetch('/mounts/mount?mount_id=' + id, {method: 'POST'});
+  const json = await res.json();
+  if (!json.ok) { alert('Fehler: ' + json.error); return; }
+  location.reload();
+}
+
+async function doUnmount(id) {
+  const res = await fetch('/mounts/unmount?mount_id=' + id, {method: 'POST'});
+  const json = await res.json();
+  if (!json.ok) { alert('Fehler: ' + json.error); return; }
+  location.reload();
+}
+
+async function doDelete(id) {
+  if (!confirm('Mount-Konfiguration entfernen?')) return;
+  await fetch('/mounts/delete?mount_id=' + id, {method: 'POST'});
+  document.getElementById('mrow-' + id)?.remove();
+}
+</script>
+
+{% endblock %}

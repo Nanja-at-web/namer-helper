@@ -17,6 +17,15 @@ from fastapi.templating import Jinja2Templates
 from namer_helper.namer_bridge.config_reader import read_namer_paths
 from namer_helper.namer_bridge.log_parser import collect_failed_matches
 from namer_helper.reports.renderer import render_report
+from namer_helper.web.mounts import (
+    NAMER_DIRS,
+    MountConfig,
+    do_mount,
+    do_unmount,
+    is_mounted,
+    load_mounts,
+    save_mounts,
+)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _SERVICE = "namer-watchdog"
@@ -83,7 +92,11 @@ def _safe_path(directory: Path, name: str) -> Path | None:
         return None
 
 
-def create_app(namer_config: Path, report_output_dir: Path) -> FastAPI:
+def create_app(
+    namer_config: Path,
+    report_output_dir: Path,
+    helper_config_dir: Path = Path("/etc/namer-helper"),
+) -> FastAPI:
     app = FastAPI(title="namer-helper dashboard")
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["urlencode"] = lambda s: quote(str(s))
@@ -245,5 +258,65 @@ def create_app(namer_config: Path, report_output_dir: Path) -> FastAPI:
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    # ── Mount management ─────────────────────────────────────────────────────
+
+    @app.get("/mounts", response_class=HTMLResponse)
+    async def mounts_page(request: Request):
+        mounts = load_mounts(helper_config_dir)
+        status = [
+            {"config": m, "mounted": is_mounted(m.target)}
+            for m in mounts
+        ]
+        return templates.TemplateResponse(request, "mounts.html", {
+            "mounts": status,
+            "namer_dirs": NAMER_DIRS,
+        })
+
+    @app.post("/mounts/add")
+    async def mounts_add(request: Request):
+        try:
+            body = await request.json()
+            mounts = load_mounts(helper_config_dir)
+            new_id = str(max((int(m.id) for m in mounts), default=0) + 1)
+            mounts.append(MountConfig(
+                id=new_id,
+                protocol=body.get("protocol", "smb"),
+                host=body.get("host", "").strip(),
+                share=body.get("share", "").strip(),
+                target=body.get("target", "").strip(),
+                username=body.get("username", "").strip(),
+                password=body.get("password", ""),
+                label=body.get("label", "").strip(),
+            ))
+            save_mounts(helper_config_dir, mounts)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.post("/mounts/mount")
+    async def mounts_mount(mount_id: str):
+        mounts = load_mounts(helper_config_dir)
+        config = next((m for m in mounts if m.id == mount_id), None)
+        if not config:
+            return {"ok": False, "error": "Mount nicht gefunden"}
+        ok, err = do_mount(config)
+        return {"ok": ok, "error": err}
+
+    @app.post("/mounts/unmount")
+    async def mounts_unmount(mount_id: str):
+        mounts = load_mounts(helper_config_dir)
+        config = next((m for m in mounts if m.id == mount_id), None)
+        if not config:
+            return {"ok": False, "error": "Mount nicht gefunden"}
+        ok, err = do_unmount(config.target)
+        return {"ok": ok, "error": err}
+
+    @app.post("/mounts/delete")
+    async def mounts_delete(mount_id: str):
+        mounts = load_mounts(helper_config_dir)
+        mounts = [m for m in mounts if m.id != mount_id]
+        save_mounts(helper_config_dir, mounts)
+        return {"ok": True}
 
     return app
