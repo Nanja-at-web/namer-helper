@@ -14,6 +14,8 @@ from namer_helper.namer_bridge.log_parser import collect_failed_matches
 from namer_helper.ollama_bridge.analyzer import analyze_filenames
 from namer_helper.ollama_bridge.client import OllamaClient
 from namer_helper.reports.renderer import render_report
+from namer_helper.stash_bridge.client import StashClient
+from namer_helper.stash_bridge.matcher import search_scenes
 
 
 @click.group()
@@ -152,3 +154,85 @@ def analyze_cmd(
         logger.info(f"Grund:    {r.reason}")
         for i, q in enumerate(r.search_queries, 1):
             logger.info(f"Suche {i}:  {q}")
+
+
+@main.command("stash-search")
+@click.argument("filenames", nargs=-1, required=False)
+@click.option(
+    "--failed-dir",
+    default=None,
+    help="failed-Verzeichnis — sucht alle Dateinamen dort in StashApp",
+)
+@click.option(
+    "--namer-config",
+    default="/etc/namer/namer.cfg",
+    show_default=True,
+    help="Pfad zur namer.cfg (für failed_dir)",
+)
+@click.option(
+    "--stash-url",
+    default="http://localhost:9999",
+    show_default=True,
+    help="StashApp-URL",
+)
+@click.option(
+    "--api-key",
+    default="",
+    help="StashApp API-Key (falls gesetzt)",
+)
+@click.option(
+    "--timeout",
+    default=15,
+    show_default=True,
+    help="Timeout in Sekunden",
+)
+def stash_search_cmd(
+    filenames: tuple[str, ...],
+    failed_dir: str | None,
+    namer_config: str,
+    stash_url: str,
+    api_key: str,
+    timeout: int,
+) -> None:
+    """Dateinamen in StashApp suchen und vorhandene Metadaten anzeigen."""
+    client = StashClient(url=stash_url, api_key=api_key, timeout=timeout)
+
+    if not client.is_available():
+        logger.error(f"StashApp nicht erreichbar unter {stash_url}")
+        raise click.Abort()
+
+    names: list[str] = list(filenames)
+
+    if not names and failed_dir:
+        matches = collect_failed_matches(Path(failed_dir))
+        names = [m.file_path.name for m in matches]
+    elif not names:
+        config_path = Path(namer_config)
+        if config_path.exists():
+            paths = read_namer_paths(config_path)
+            matches = collect_failed_matches(paths["failed_dir"])
+            names = [m.file_path.name for m in matches]
+
+    if not names:
+        logger.warning("Keine Dateinamen zum Suchen gefunden.")
+        return
+
+    logger.info(f"Suche {len(names)} Dateinamen in StashApp ({stash_url})")
+    results = search_scenes(names, client)
+
+    for r in results:
+        logger.info(f"\n{'─' * 60}")
+        logger.info(f"Datei: {r.filename}")
+        if r.error:
+            logger.error(f"Fehler: {r.error}")
+            continue
+        if not r.found:
+            logger.warning("Kein Treffer in StashApp")
+            continue
+        s = r.best
+        logger.success(f"Treffer ({s.matched_by}, confidence {s.confidence:.2f})")
+        logger.info(f"  Titel:     {s.title}")
+        logger.info(f"  Datum:     {s.date or '—'}")
+        logger.info(f"  Studio:    {s.studio or '—'}")
+        if s.performers:
+            logger.info(f"  Performer: {', '.join(s.performers)}")

@@ -11,6 +11,22 @@ report:
   # Format: markdown, json, both
   format: both
 
+stash:
+  # URL der StashApp-Instanz (GraphQL-Endpoint wird automatisch ergänzt)
+  # Beispiel Proxmox-LXC oder lokale Instanz:
+  #   url: http://192.168.1.123:9999
+  url: http://localhost:9999
+
+  # API-Key (falls in StashApp unter Settings → Security gesetzt)
+  # Leer lassen wenn keine Authentifizierung aktiv ist.
+  api_key: ""
+
+  # Timeout in Sekunden
+  timeout: 15
+
+  # Stash Bridge aktivieren
+  enabled: false
+
 ollama:
   # Empfohlene Variante: Ollama als eigener Proxmox-LXC
   # Installer: https://community-scripts.github.io/ProxmoxVE/scripts?id=ollama
