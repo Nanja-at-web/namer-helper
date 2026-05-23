@@ -50,7 +50,13 @@ def main() -> None:
     show_default=True,
     help="Ausgabeformat",
 )
-def report_cmd(namer_config: str, failed_dir: str | None, output_dir: str, fmt: str) -> None:
+@click.option(
+    "--anonymize",
+    is_flag=True,
+    default=False,
+    help="Dateinamen durch Pseudonyme ersetzen (für Debugging/Weitergabe)",
+)
+def report_cmd(namer_config: str, failed_dir: str | None, output_dir: str, fmt: str, anonymize: bool) -> None:
     """Fehlgeschlagene Namer-Treffer sammeln und Report erzeugen."""
     config_path = Path(namer_config)
 
@@ -72,9 +78,10 @@ def report_cmd(namer_config: str, failed_dir: str | None, output_dir: str, fmt: 
     matches = collect_failed_matches(resolved_failed_dir)
     logger.info(f"Gefunden: {len(matches)} fehlgeschlagene Treffer")
 
-    written = render_report(matches, Path(output_dir), fmt=fmt)
+    written = render_report(matches, Path(output_dir), fmt=fmt, anonymize=anonymize)
     for p in written:
-        logger.success(f"Report geschrieben: {p}")
+        label = " (anonymisiert)" if anonymize else ""
+        logger.success(f"Report geschrieben{label}: {p}")
 
 
 @main.command("analyze")

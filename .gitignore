@@ -5,3 +5,16 @@ dist/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+
+# Actual namer config contains porndb_token — only .example belongs in repo
+config/namer/namer.cfg
+# Local helper config overrides (may contain API keys)
+config/helper/helper.local.yaml
+
+# Report-Output kann echte Dateinamen enthalten (nur top-level output dirs)
+/reports/
+failed_matches_*.json
+failed_matches_*.md
+
+# Logdateien
+*.log
