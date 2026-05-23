@@ -1,0 +1,16 @@
+namer:
+  # Pfad zur namer.cfg
+  config_path: /etc/namer/namer.cfg
+  # Verzeichnisse (werden aus namer.cfg gelesen falls leer)
+  failed_dir: ""
+  log_dir: ""
+
+report:
+  # Ausgabeverzeichnis für Reports
+  output_dir: /var/lib/namer-helper/reports
+  # Format: markdown, json, both
+  format: both
+
+privacy:
+  # local-only | query-external | contribute
+  mode: local-only
