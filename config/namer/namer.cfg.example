@@ -1,0 +1,13 @@
+[namer]
+# ThePornDB API Token — https://theporndb.net/user/api-token
+porndb_token =
+database_path = /database
+
+[watchdog]
+watch_dir = /watch
+work_dir  = /work
+failed_dir = /failed
+dest_dir  = /dest
+web       = True
+host      = 0.0.0.0
+port      = 6980

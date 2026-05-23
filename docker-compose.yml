@@ -1,0 +1,85 @@
+---
+# Namer Full-Stack — docker-compose.yml
+#
+# Enthaltene Dienste:
+#   namer          — Core-Watchdog + WebUI (Port 6980)
+#   namer-helper   — Report-Daemon + CLI-Sidecar (lokal gebaut)
+#   ollama         — Lokales LLM (Port 11434, opt-in via --profile ollama)
+#
+# Schnellstart:
+#   cp config/namer/namer.cfg.example config/namer/namer.cfg
+#   # porndb_token in config/namer/namer.cfg eintragen
+#   docker compose up -d
+#
+# Mit Ollama:
+#   docker compose --profile ollama up -d
+#   docker exec ollama ollama pull llama3
+#   # ollama.base_url in config/helper/helper.yaml auf http://ollama:11434 setzen
+
+services:
+
+  namer:
+    image: ghcr.io/theporndatabase/namer:latest
+    container_name: namer
+    restart: unless-stopped
+    ports:
+      - "6980:6980"
+    volumes:
+      # namer.cfg — porndb_token hier eintragen
+      - ./config/namer:/config
+      # Media-Verzeichnisse
+      - namer_watch:/watch
+      - namer_work:/work
+      - namer_failed:/failed
+      - namer_dest:/dest
+      - namer_database:/database
+    environment:
+      NAMER_CONFIG: /config/namer.cfg
+    networks:
+      - namer_net
+
+  namer-helper:
+    build: .
+    container_name: namer-helper
+    restart: unless-stopped
+    volumes:
+      # namer-helper Konfiguration
+      - ./config/helper:/etc/namer-helper
+      # Shared: failed-Verzeichnis von namer (für Log-Analyse)
+      - namer_failed:/var/lib/namer/failed
+      # Report-Ausgabe
+      - namer_helper_reports:/var/lib/namer-helper/reports
+    environment:
+      HELPER_CONFIG: /etc/namer-helper/helper.yaml
+      # Wie oft Reports generiert werden (Sekunden, Standard: 1h)
+      REPORT_INTERVAL: "3600"
+    depends_on:
+      - namer
+    networks:
+      - namer_net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    profiles:
+      - ollama
+    networks:
+      - namer_net
+
+networks:
+  namer_net:
+    driver: bridge
+
+volumes:
+  namer_watch:
+  namer_work:
+  namer_failed:
+  namer_dest:
+  namer_database:
+  namer_helper_reports:
+  ollama_data:

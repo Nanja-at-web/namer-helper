@@ -1,5 +1,7 @@
 namer:
   # Pfad zur namer.cfg
+  # Docker: /etc/namer-helper/namer.cfg  (via config/helper/ Volume)
+  # Proxmox LXC: /etc/namer/namer.cfg
   config_path: /etc/namer/namer.cfg
   # Verzeichnisse (werden aus namer.cfg gelesen falls leer)
   failed_dir: ""
@@ -33,7 +35,10 @@ ollama:
   # Nach der Installation die IP des Ollama-LXC eintragen, z.B.:
   #   base_url: http://192.168.1.50:11434
   #
-  # Alternativ lokal (Docker oder direktes Ollama):
+  # Docker Full-Stack (--profile ollama):
+  #   base_url: http://ollama:11434
+  #
+  # Alternativ lokal (direktes Ollama):
   #   base_url: http://localhost:11434
   base_url: http://localhost:11434
 
