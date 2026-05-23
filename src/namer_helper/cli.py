@@ -24,6 +24,31 @@ def main() -> None:
     """Namer Helper — sidecar tools for Namer."""
 
 
+@main.command("serve")
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind-Adresse")
+@click.option("--port", default=6981, show_default=True, help="Port")
+@click.option(
+    "--namer-config",
+    default="/etc/namer/namer.cfg",
+    show_default=True,
+    help="Pfad zur namer.cfg",
+)
+@click.option(
+    "--report-dir",
+    default="/var/lib/namer-helper/reports",
+    show_default=True,
+    help="Report-Ausgabeverzeichnis",
+)
+def serve_cmd(host: str, port: int, namer_config: str, report_dir: str) -> None:
+    """Web-Dashboard starten (Port 6981)."""
+    import uvicorn
+    from namer_helper.web.app import create_app
+
+    app = create_app(Path(namer_config), Path(report_dir))
+    logger.info(f"Dashboard: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+
+
 @main.command("report")
 @click.option(
     "--namer-config",

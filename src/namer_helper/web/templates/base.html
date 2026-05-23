@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>namer-helper{% block title %}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+  <nav class="bg-gray-900 text-white px-6 py-3 flex items-center gap-6 shadow">
+    <a href="/" class="font-bold text-lg tracking-tight">namer-helper</a>
+    <a href="/" class="text-gray-300 hover:text-white text-sm">Dashboard</a>
+    <a href="/files/watch" class="text-gray-300 hover:text-white text-sm">Watch</a>
+    <a href="/files/failed" class="text-gray-300 hover:text-white text-sm">Failed</a>
+    <a href="/files/dest" class="text-gray-300 hover:text-white text-sm">Dest</a>
+  </nav>
+
+  <main class="max-w-5xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>
