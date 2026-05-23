@@ -20,7 +20,8 @@ stash:
   url: http://localhost:9999
 
   # API-Key (falls in StashApp unter Settings → Security gesetzt)
-  # Leer lassen wenn keine Authentifizierung aktiv ist.
+  # WICHTIG: Keinen echten API-Key hier eintragen — diese Datei ist in git.
+  # Lokale Overrides mit Credentials gehören nach config/helper/helper.local.yaml (gitignored).
   api_key: ""
 
   # Timeout in Sekunden

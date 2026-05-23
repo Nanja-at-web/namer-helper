@@ -50,7 +50,10 @@ services:
       # Report-Ausgabe
       - namer_helper_reports:/var/lib/namer-helper/reports
     environment:
-      HELPER_CONFIG: /etc/namer-helper/helper.yaml
+      # Shared failed-Verzeichnis von namer (muss mit namer_failed Volume übereinstimmen)
+      NAMER_FAILED_DIR: /var/lib/namer/failed
+      # Report-Ausgabe (muss mit namer_helper_reports Volume übereinstimmen)
+      REPORT_OUTPUT_DIR: /var/lib/namer-helper/reports
       # Wie oft Reports generiert werden (Sekunden, Standard: 1h)
       REPORT_INTERVAL: "3600"
     depends_on:

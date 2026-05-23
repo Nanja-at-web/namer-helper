@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="${HELPER_CONFIG:-/etc/namer-helper/helper.yaml}"
+FAILED_DIR="${NAMER_FAILED_DIR:-/var/lib/namer/failed}"
+OUTPUT_DIR="${REPORT_OUTPUT_DIR:-/var/lib/namer-helper/reports}"
 INTERVAL="${REPORT_INTERVAL:-3600}"
 
 # Wenn Argumente übergeben: direkter CLI-Aufruf (z.B. docker exec ... analyze)
@@ -10,9 +11,12 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Daemon-Modus: Report periodisch ausführen
-echo "namer-helper daemon — Report alle ${INTERVAL}s (config: ${CONFIG})"
+echo "namer-helper daemon — Report alle ${INTERVAL}s (failed: ${FAILED_DIR})"
 while true; do
   echo "[$(date -Iseconds)] Starte report..."
-  namer-helper --config "${CONFIG}" report || echo "[$(date -Iseconds)] report fehlgeschlagen (weiter)"
+  namer-helper report \
+    --failed-dir "${FAILED_DIR}" \
+    --output-dir "${OUTPUT_DIR}" \
+    || echo "[$(date -Iseconds)] report fehlgeschlagen (weiter)"
   sleep "${INTERVAL}"
 done
