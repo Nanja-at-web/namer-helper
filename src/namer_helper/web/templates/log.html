@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %} — Live Log{% endblock %}
+
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <div class="flex items-center gap-3">
+    <a href="/" class="text-gray-400 hover:text-gray-600 text-sm">← Dashboard</a>
+    <h1 class="text-2xl font-bold text-gray-800">Live Log — namer-watchdog</h1>
+  </div>
+  <div class="flex gap-2">
+    <button id="btn-pause"
+      onclick="togglePause()"
+      class="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-sm px-3 py-1.5 rounded">
+      Pause
+    </button>
+    <button onclick="clearLog()"
+      class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-1.5 rounded">
+      Leeren
+    </button>
+  </div>
+</div>
+
+<div id="log-box"
+  class="bg-gray-900 text-green-400 font-mono text-xs leading-5 p-4 rounded-lg h-[70vh] overflow-y-auto whitespace-pre-wrap break-all">
+</div>
+
+<script>
+const box = document.getElementById('log-box');
+const btnPause = document.getElementById('btn-pause');
+let paused = false;
+let lineCount = 0;
+const MAX_LINES = 500;
+
+const es = new EventSource('/log/stream');
+
+es.onmessage = function(e) {
+  if (paused) return;
+  const line = document.createElement('div');
+  line.textContent = e.data;
+  box.appendChild(line);
+  lineCount++;
+  if (lineCount > MAX_LINES) {
+    box.removeChild(box.firstChild);
+    lineCount--;
+  }
+  box.scrollTop = box.scrollHeight;
+};
+
+es.onerror = function() {
+  const line = document.createElement('div');
+  line.className = 'text-red-400';
+  line.textContent = '[Verbindung unterbrochen — Seite neu laden]';
+  box.appendChild(line);
+};
+
+function togglePause() {
+  paused = !paused;
+  btnPause.textContent = paused ? 'Weiter' : 'Pause';
+  btnPause.className = paused
+    ? 'bg-green-100 hover:bg-green-200 text-green-700 text-sm px-3 py-1.5 rounded'
+    : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-sm px-3 py-1.5 rounded';
+}
+
+function clearLog() {
+  box.innerHTML = '';
+  lineCount = 0;
+}
+</script>
+
+{% endblock %}

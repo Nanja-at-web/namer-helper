@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %} — Log: {{ name }}{% endblock %}
+
+{% block content %}
+
+<div class="flex items-center gap-3 mb-4">
+  <a href="/failed" class="text-gray-400 hover:text-gray-600 text-sm">← Failed</a>
+  <h1 class="text-lg font-bold text-gray-800 font-mono break-all">{{ name }}.namer_failed.log</h1>
+</div>
+
+<div class="bg-gray-900 text-gray-200 font-mono text-xs leading-5 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap break-all">
+{{ content if content else "Log-Datei nicht gefunden." }}
+</div>
+
+{% endblock %}

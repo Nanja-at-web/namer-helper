@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %} — Failed{% endblock %}
+
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <a href="/" class="text-gray-400 hover:text-gray-600 text-sm">← Dashboard</a>
+    <h1 class="text-2xl font-bold text-gray-800">failed/</h1>
+    <span class="text-gray-400 text-sm">({{ files | length }} Dateien)</span>
+  </div>
+</div>
+
+{% if files %}
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+      <tr>
+        <th class="text-left px-4 py-3">Dateiname</th>
+        <th class="text-right px-4 py-3">Größe</th>
+        <th class="text-center px-4 py-3">Log</th>
+        <th class="text-right px-4 py-3">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100" id="file-table">
+      {% for f in files %}
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-gray-700 break-all">{{ f.name }}</td>
+        <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
+        <td class="px-4 py-3 text-center">
+          {% if f.has_log %}
+          <a href="/failed/logfile?name={{ f.name | urlencode }}"
+             class="text-blue-500 hover:underline text-xs">Log</a>
+          {% else %}
+          <span class="text-gray-300 text-xs">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right whitespace-nowrap">
+          <button
+            onclick="doAction('/failed/retry?name={{ f.name_encoded }}', {{ loop.index }})"
+            class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded mr-1">
+            ↩ Retry
+          </button>
+          <button
+            onclick="confirmDelete('/failed/delete?name={{ f.name_encoded }}', {{ loop.index }}, '{{ f.name | replace("'", "\\'") }}')"
+            class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-3 py-1 rounded">
+            🗑 Löschen
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow p-8 text-center text-gray-400">
+  Keine fehlgeschlagenen Dateien vorhanden.
+</div>
+{% endif %}
+
+<script>
+function doAction(url, rowIndex) {
+  fetch(url, { method: 'POST' })
+    .then(() => {
+      const row = document.getElementById('row-' + rowIndex);
+      if (row) row.remove();
+    });
+}
+
+function confirmDelete(url, rowIndex, name) {
+  if (confirm('Datei wirklich löschen?\n' + name)) {
+    doAction(url, rowIndex);
+  }
+}
+</script>
+
+{% endblock %}
