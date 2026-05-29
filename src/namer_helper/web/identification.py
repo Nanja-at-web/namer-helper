@@ -138,6 +138,8 @@ def build_identification(
     filename_parsed: dict | None,
     dest_duplicate: str | None,
     local_duration: int | None = None,
+    tpdb_movies: list[dict] | None = None,
+    tpdb_movie_suggested: str | None = None,
 ) -> dict:
     ext = Path(original_name).suffix
     signals: list[str] = []
@@ -155,6 +157,7 @@ def build_identification(
 
     sdb = stashdb_scenes[0] if stashdb_scenes else None
     tpdb = tpdb_scenes[0] if tpdb_scenes else None
+    movie = (tpdb_movies or [None])[0]
 
     if sdb and sdb.get("match_via") == "fingerprint":
         return Identification(
@@ -176,6 +179,46 @@ def build_identification(
             suggested_name=tpdb_suggested or _with_ext(_scene_name(tpdb), ext),
             action="rename",
             signals=["Fingerprint-Treffer"],
+        ).to_dict()
+
+    if movie and (movie.get("match_method") == "hash" or not movie.get("score")):
+        return Identification(
+            status="identified",
+            confidence=0.96,
+            source="ThePornDB Movie Fingerprint",
+            reason="ThePornDB hat den Film über oshash/phash eindeutig erkannt",
+            suggested_name=tpdb_movie_suggested or _with_ext(_scene_name(movie), ext),
+            action="rename",
+            signals=["Movie-Fingerprint-Treffer"],
+        ).to_dict()
+
+    if movie:
+        duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(movie))
+        if duration_conflict:
+            return Identification(
+                status="possible",
+                confidence=0.35,
+                source="ThePornDB Movie",
+                reason="Dauer passt nicht zum Movie-Treffer; kein eindeutiger Match",
+                suggested_name=None,
+                action="review",
+                signals=[duration_signal or "Dauerkonflikt"],
+            ).to_dict()
+        score = int(movie.get("score") or 0)
+        if score >= 80:
+            status, confidence, action = "identified", 0.90, "rename"
+        elif score >= 50:
+            status, confidence, action = "likely", 0.78, "review"
+        else:
+            status, confidence, action = "possible", 0.60, "review"
+        return Identification(
+            status=status,
+            confidence=confidence,
+            source="ThePornDB Movie",
+            reason=f"ThePornDB Movie-Kontextscore {score}",
+            suggested_name=tpdb_movie_suggested or _with_ext(_scene_name(movie), ext),
+            action=action,
+            signals=[f"Movie Score {score}"],
         ).to_dict()
 
     confirmed, confirm_signals, cross_duration_conflict = _cross_confirm(sdb, tpdb, filename_parsed, local_duration)

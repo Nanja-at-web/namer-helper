@@ -41,3 +41,41 @@ def test_tpdb_context_search_tries_multiple_terms_and_dedupes(monkeypatch):
     assert result.found
     assert result.best.id == "scene-1"
     assert result.best.score >= 80
+
+
+
+def test_tpdb_movie_context_search_uses_rest_and_scores(monkeypatch):
+    client = ThePornDBClient(api_key="token")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params or {}))
+        if path == "/movies" and (params or {}).get("q") == "Feature Movie":
+            return {
+                "data": [{
+                    "id": "movie-1",
+                    "title": "Feature Movie",
+                    "type": "Movie",
+                    "date": "2020-05-06",
+                    "duration": 9100,
+                    "poster": "https://example.invalid/poster.jpg",
+                    "site": {"name": "Movie Studio"},
+                    "performers": [{"name": "Performer A"}],
+                }]
+            }, None
+        return {"data": []}, None
+
+    monkeypatch.setattr(client, "_get_rest", fake_get)
+
+    result = client.search_movies_by_context(
+        "Feature Movie",
+        performers=["Performer A"],
+        studio="Movie Studio",
+        date="2020-05-06",
+        duration=9106,
+    )
+
+    assert calls[0][0] == "/movies"
+    assert result.found
+    assert result.best.id == "movie-1"
+    assert result.best.score >= 80

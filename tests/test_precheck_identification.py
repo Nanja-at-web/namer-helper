@@ -107,3 +107,33 @@ def test_identification_rejects_cross_confirmed_duration_mismatch():
     assert result["confidence"] <= 0.35
     assert result["suggested_name"] is None
     assert any("Dauerkonflikt" in signal for signal in result["signals"])
+
+
+
+def test_identification_accepts_tpdb_movie_context_match():
+    result = build_identification(
+        original_name="movie_002.mp4",
+        stashdb_scenes=[],
+        stashdb_suggested=None,
+        tpdb_scenes=[],
+        tpdb_suggested=None,
+        tpdb_movies=[{
+            "title": "Feature Movie",
+            "date": "2020-05-06",
+            "site": "Movie Studio",
+            "performers": ["Performer A"],
+            "duration": 9100,
+            "score": 85,
+            "match_method": "movie",
+        }],
+        tpdb_movie_suggested="Movie Studio - 2020-05-06 - Feature Movie.mp4",
+        ollama=None,
+        filename_parsed={"performers": ["Performer A"]},
+        dest_duplicate=None,
+        local_duration=9106,
+    )
+
+    assert result["status"] == "identified"
+    assert result["source"] == "ThePornDB Movie"
+    assert result["action"] == "rename"
+    assert result["suggested_name"] == "Movie Studio - 2020-05-06 - Feature Movie.mp4"

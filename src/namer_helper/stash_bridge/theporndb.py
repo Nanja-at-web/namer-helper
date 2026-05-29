@@ -17,6 +17,7 @@ import requests
 
 
 THEPORNDB_GRAPHQL_URL = "https://theporndb.net/graphql"
+THEPORNDB_REST_URL = "https://api.theporndb.net"
 
 _STOP_WORDS = {"a", "an", "the", "and", "in", "of", "to", "my", "her", "his", "on", "at", "is", "with"}
 
@@ -82,6 +83,38 @@ class ThePornDBResult:
     @property
     def best(self) -> ThePornDBScene | None:
         return self.scenes[0] if self.scenes else None
+
+
+@dataclass
+class ThePornDBMovie:
+    id: str
+    title: str
+    date: str | None
+    site: str | None
+    network: str | None
+    performers: list[str] = field(default_factory=list)
+    url: str = ""
+    image: str = ""
+    match_method: str = "hash"
+    score: int = 0
+    score_breakdown: dict = field(default_factory=dict)
+    duration: int | None = None
+    type: str = "Movie"
+
+
+@dataclass
+class ThePornDBMovieResult:
+    movies: list[ThePornDBMovie] = field(default_factory=list)
+    error: str | None = None
+    match_method: str = "hash"
+
+    @property
+    def found(self) -> bool:
+        return bool(self.movies)
+
+    @property
+    def best(self) -> ThePornDBMovie | None:
+        return self.movies[0] if self.movies else None
 
 
 def _score_scene(
@@ -163,11 +196,29 @@ def _score_scene(
     return total, breakdown
 
 
+def _score_movie(
+    movie: ThePornDBMovie,
+    title: str,
+    performers: list[str],
+    studio: str | None,
+    date: str | None,
+    duration: int | None = None,
+) -> tuple[int, dict]:
+    # Same signals as scene scoring, but movies often lack exact duration.
+    proxy = ThePornDBScene(
+        id=movie.id, title=movie.title, date=movie.date, site=movie.site,
+        network=movie.network, performers=movie.performers, duration=movie.duration,
+    )
+    return _score_scene(proxy, title, performers, studio, date, duration)
+
+
 class ThePornDBClient:
     def __init__(self, api_key: str = "", timeout: int = 15) -> None:
         self._headers = {"Content-Type": "application/json"}
+        self._rest_headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if api_key:
             self._headers["ApiKey"] = api_key
+            self._rest_headers["Authorization"] = f"Bearer {api_key}"
         self._api_key = api_key
         self._timeout = timeout
 
@@ -376,6 +427,133 @@ class ThePornDBClient:
             return ThePornDBResult(scenes=all_candidates[:3], match_method="performer")
 
         return ThePornDBResult(scenes=scored[:3], match_method="performer")
+
+    def _get_rest(self, path: str, params: dict | None = None) -> tuple[dict | None, str | None]:
+        if not self._api_key:
+            return None, "ThePornDB API-Token fehlt"
+        try:
+            r = requests.get(
+                f"{THEPORNDB_REST_URL}{path}",
+                params={k: v for k, v in (params or {}).items() if v not in (None, "", [])},
+                headers=self._rest_headers,
+                timeout=self._timeout,
+            )
+            if r.status_code == 401:
+                return None, "ThePornDB: API-Token ungültig"
+            if r.status_code == 403:
+                return None, "ThePornDB: Zugriff verweigert"
+            if r.status_code == 404:
+                return None, "ThePornDB: nicht gefunden"
+            r.raise_for_status()
+            return r.json(), None
+        except requests.RequestException as exc:
+            return None, str(exc)
+
+    def _parse_movies(self, raw: list, method: str) -> list[ThePornDBMovie]:
+        movies: list[ThePornDBMovie] = []
+        for m in raw:
+            movie_id = m.get("id") or m.get("uuid") or ""
+            site_obj = m.get("site") or {}
+            network_obj = site_obj.get("network") or site_obj.get("parent") or {}
+            performers = [
+                p.get("name", "") if isinstance(p, dict) else str(p)
+                for p in (m.get("performers") or [])
+                if (p.get("name") if isinstance(p, dict) else p)
+            ]
+            raw_dur = m.get("duration")
+            image = m.get("poster") or m.get("image") or ""
+            if isinstance(m.get("posters"), dict):
+                image = m["posters"].get("large") or image
+            movies.append(ThePornDBMovie(
+                id=str(movie_id),
+                title=m.get("title") or "",
+                date=m.get("date"),
+                site=site_obj.get("name") if isinstance(site_obj, dict) else None,
+                network=network_obj.get("name") if isinstance(network_obj, dict) else None,
+                performers=performers,
+                url=f"https://api.theporndb.net/movies/{movie_id}" if movie_id else (m.get("url") or ""),
+                image=image or "",
+                match_method=method,
+                duration=int(raw_dur) if raw_dur else None,
+                type=m.get("type") or "Movie",
+            ))
+        return movies
+
+    def query_movies_by_hashes(
+        self, *, oshash: str | None = None, phash: str | None = None
+    ) -> ThePornDBMovieResult:
+        for hash_type, hash_value in (("OSHASH", oshash), ("PHASH", phash)):
+            if not hash_value:
+                continue
+            body, err = self._get_rest(f"/movies/hash/{hash_value}", {"type": hash_type})
+            if err and "nicht gefunden" not in err:
+                return ThePornDBMovieResult(error=err, match_method="hash")
+            if not body:
+                continue
+            raw = body.get("data") if isinstance(body, dict) else body
+            if isinstance(raw, dict):
+                return ThePornDBMovieResult(movies=self._parse_movies([raw], "hash"), match_method="hash")
+            if isinstance(raw, list) and raw:
+                return ThePornDBMovieResult(movies=self._parse_movies(raw, "hash"), match_method="hash")
+        return ThePornDBMovieResult(error="Kein Movie-Fingerprint-Treffer", match_method="hash")
+
+    def search_movies_by_context(
+        self,
+        title: str = "",
+        performers: list[str] | None = None,
+        studio: str | None = None,
+        date: str | None = None,
+        duration: int | None = None,
+        min_score: int = 20,
+    ) -> ThePornDBMovieResult:
+        performers = performers or []
+        terms: list[str] = []
+        base_title = title.strip()
+        clean_perfs = [p.strip() for p in performers[:3] if p.strip()]
+        if base_title:
+            terms.append(base_title)
+        if clean_perfs and base_title:
+            terms.append(f"{clean_perfs[0]} {base_title}")
+        if len(clean_perfs) >= 2:
+            terms.append(" ".join(clean_perfs[:2]))
+        if studio and base_title:
+            terms.append(f"{studio} {base_title}")
+
+        seen_terms: set[str] = set()
+        seen_ids: set[str] = set()
+        candidates: list[ThePornDBMovie] = []
+        last_error: str | None = None
+        for term in terms:
+            key = term.lower().strip()
+            if not key or key in seen_terms:
+                continue
+            seen_terms.add(key)
+            params = {"q": term, "per_page": 10}
+            if date and len(date) >= 4:
+                params["year"] = date[:4]
+            if duration:
+                params["duration"] = duration
+            body, err = self._get_rest("/movies", params)
+            if err:
+                last_error = err
+                continue
+            raw = (body or {}).get("data") or []
+            for movie in self._parse_movies(raw, "movie"):
+                if movie.id and movie.id not in seen_ids:
+                    seen_ids.add(movie.id)
+                    candidates.append(movie)
+
+        if not candidates:
+            return ThePornDBMovieResult(error=last_error or "Keine Movie-Treffer", match_method="movie")
+
+        for movie in candidates:
+            movie.score, movie.score_breakdown = _score_movie(movie, title, performers, studio, date, duration)
+        scored = [m for m in candidates if m.score >= min_score]
+        scored.sort(key=lambda m: m.score, reverse=True)
+        if not scored:
+            candidates.sort(key=lambda m: m.score, reverse=True)
+            return ThePornDBMovieResult(movies=candidates[:3], match_method="movie")
+        return ThePornDBMovieResult(movies=scored[:3], match_method="movie")
 
     def query_by_hash(self, oshash: str) -> ThePornDBResult:
         """Compat alias."""

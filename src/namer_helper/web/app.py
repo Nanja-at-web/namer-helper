@@ -837,11 +837,20 @@ def create_app(
                     oshash=oshash, phash=phash
                 )
 
-            sdb_result, sdb_performer_result, sdb_context_result, tpdb_fp_result = await asyncio.gather(
+            def _tpdb_movie_fp():
+                if not (oshash or phash):
+                    return None
+                tpdb_key = ai_cfg.theporndb_api_key or read_namer_porndb_token(namer_config)
+                return ThePornDBClient(api_key=tpdb_key).query_movies_by_hashes(
+                    oshash=oshash, phash=phash
+                )
+
+            sdb_result, sdb_performer_result, sdb_context_result, tpdb_fp_result, tpdb_movie_fp_result = await asyncio.gather(
                 loop.run_in_executor(None, _stashdb),
                 loop.run_in_executor(None, _stashdb_performer),
                 loop.run_in_executor(None, _stashdb_context),
                 loop.run_in_executor(None, _tpdb_fp),
+                loop.run_in_executor(None, _tpdb_movie_fp),
             )
 
             # Merge StashDB results — priority: fingerprint > context search > performer lookup
@@ -892,6 +901,11 @@ def create_app(
             tpdb_suggested: str | None = None
             tpdb_match_method: str = "hash"
             tpdb_result = tpdb_fp_result  # fingerprint result from Phase 3
+            tpdb_movies: list[dict] = []
+            tpdb_movie_error: str | None = None
+            tpdb_movie_suggested: str | None = None
+            tpdb_movie_match_method: str = "hash"
+            tpdb_movie_result = tpdb_movie_fp_result
 
             # If parsed.studio looks like a performer list, recover performers from it
             import re as _re
@@ -932,6 +946,23 @@ def create_app(
                               vinfo.get("meta_studio") or vinfo.get("meta_copyright"))
                 ctx_date = sdb_date or parsed.date or vinfo.get("meta_date")
                 ctx_duration = sdb_dur or hashes.get("duration")
+
+                # Movie lookup: full-length files often live under /movies, not /scenes.
+                if not (tpdb_movie_result and tpdb_movie_result.found):
+                    movie_terms = [parsed.cleaned or ""]
+                    if stashdb_scenes:
+                        movie_terms.append(sdb.get("title", ""))
+                    if ollama_result:
+                        movie_terms.extend((ollama_result.get("search_queries") or [])[:2])
+                    for mt in movie_terms:
+                        if not mt:
+                            continue
+                        tpdb_movie_result = tpdb.search_movies_by_context(
+                            mt, performers=ctx_performers, studio=ctx_studio,
+                            date=ctx_date, duration=ctx_duration,
+                        )
+                        if tpdb_movie_result and tpdb_movie_result.found:
+                            break
 
                 # Step 1.5: Performer-Datenbanksuche — alle bekannten Performer als primäres Signal
                 if (not tpdb_result or not tpdb_result.found) and ctx_performers:
@@ -1003,6 +1034,34 @@ def create_app(
                             tname += f" ({', '.join(b.performers[:3])})"
                         tpdb_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
 
+                if tpdb_movie_result:
+                    tpdb_movie_error = tpdb_movie_result.error
+                    tpdb_movie_match_method = tpdb_movie_result.match_method
+                    tpdb_movies = [
+                        {
+                            "title": m.title,
+                            "date": m.date,
+                            "site": m.site,
+                            "network": m.network,
+                            "performers": m.performers,
+                            "url": m.url,
+                            "image": m.image,
+                            "match_method": m.match_method,
+                            "score": m.score,
+                            "score_breakdown": m.score_breakdown,
+                            "duration": m.duration,
+                            "type": m.type,
+                        }
+                        for m in tpdb_movie_result.movies
+                    ]
+                    if tpdb_movie_result.best:
+                        b = tpdb_movie_result.best
+                        parts = [p for p in [b.site or b.network, b.date, b.title] if p]
+                        tname = " - ".join(parts)
+                        if b.performers:
+                            tname += f" ({', '.join(b.performers[:3])})"
+                        tpdb_movie_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
+
             # Cross-check: StashDB title/performers vs TPDB + filename performers
             tpdb_crosscheck: str = "skipped"
             if has_primary_result:
@@ -1048,6 +1107,8 @@ def create_app(
                 stashdb_suggested=stashdb_suggested,
                 tpdb_scenes=tpdb_scenes,
                 tpdb_suggested=tpdb_suggested,
+                tpdb_movies=tpdb_movies,
+                tpdb_movie_suggested=tpdb_movie_suggested,
                 ollama=ollama_result,
                 filename_parsed=filename_parsed,
                 dest_duplicate=dest_duplicate,
@@ -1064,6 +1125,10 @@ def create_app(
                 "tpdb_scenes": tpdb_scenes,
                 "tpdb_error": tpdb_error,
                 "tpdb_suggested": tpdb_suggested,
+                "tpdb_movies": tpdb_movies,
+                "tpdb_movie_error": tpdb_movie_error,
+                "tpdb_movie_suggested": tpdb_movie_suggested,
+                "tpdb_movie_match_method": tpdb_movie_match_method,
                 "tpdb_crosscheck": tpdb_crosscheck,
                 "tpdb_match_method": tpdb_match_method,
                 "ollama": ollama_result,
@@ -1083,6 +1148,10 @@ def create_app(
                 "tpdb_scenes": [],
                 "tpdb_error": str(exc),
                 "tpdb_suggested": None,
+                "tpdb_movies": [],
+                "tpdb_movie_error": str(exc),
+                "tpdb_movie_suggested": None,
+                "tpdb_movie_match_method": "hash",
                 "tpdb_crosscheck": "skipped",
                 "tpdb_match_method": "hash",
                 "ollama": None,

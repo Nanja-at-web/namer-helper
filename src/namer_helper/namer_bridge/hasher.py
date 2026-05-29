@@ -60,16 +60,21 @@ def detect_studio_logo(path: Path, ollama_url: str, model: str = "moondream") ->
     _skip = {"none", "no", "nothing", "n/a", "unknown", ""}
 
     try:
+        duration = get_video_info(path).get("duration") or 0
+        timestamps = [2, 8]
+        if duration and duration > 120:
+            timestamps.extend([max(1, int(duration * 0.25)), max(1, int(duration * 0.55)), max(1, int(duration * 0.85))])
+
         with tempfile.TemporaryDirectory() as tmp:
-            # Single frame at 2s — intro logo cards appear in the first seconds.
-            # One frame keeps latency manageable on CPU-only Ollama (~60-90s).
-            frame = os.path.join(tmp, "logo.jpg")
-            r = subprocess.run(
-                ["ffmpeg", "-ss", "2", "-i", str(path),
-                 "-vframes", "1", "-q:v", "2", frame],
-                capture_output=True, timeout=10,
-            )
-            if r.returncode == 0 and os.path.exists(frame):
+            for idx, ts in enumerate(dict.fromkeys(timestamps)):
+                frame = os.path.join(tmp, f"logo_{idx}.jpg")
+                r = subprocess.run(
+                    ["ffmpeg", "-ss", str(ts), "-i", str(path),
+                     "-vframes", "1", "-q:v", "2", frame],
+                    capture_output=True, timeout=10,
+                )
+                if r.returncode != 0 or not os.path.exists(frame):
+                    continue
                 img_b64 = base64.b64encode(open(frame, "rb").read()).decode()
                 try:
                     resp = requests.post(
