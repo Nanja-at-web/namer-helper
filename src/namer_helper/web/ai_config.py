@@ -27,7 +27,7 @@ class AIConfig:
 def load_ai_config(config_dir: Path) -> AIConfig:
     path = config_dir / _CONFIG_FILE
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return AIConfig(
             stashdb_api_key=data.get("stashdb_api_key", ""),
             theporndb_api_key=data.get("theporndb_api_key", ""),
@@ -41,5 +41,6 @@ def load_ai_config(config_dir: Path) -> AIConfig:
 
 def save_ai_config(config_dir: Path, cfg: AIConfig) -> None:
     path = config_dir / _CONFIG_FILE
-    path.write_text(json.dumps(asdict(cfg), indent=2))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(cfg), indent=2), encoding="utf-8")
     path.chmod(0o600)

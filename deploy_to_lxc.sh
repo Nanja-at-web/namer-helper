@@ -5,6 +5,8 @@
 set -euo pipefail
 
 CT="${1:-103}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$SCRIPT_DIR/src/namer_helper"
 
 # Auto-detect install path inside the container
 SITE=$(pct exec "$CT" -- find /opt /usr/local /root -name "app.py" -path "*/namer_helper/web/*" 2>/dev/null | head -1 | sed 's|/web/app.py||')
@@ -22,18 +24,27 @@ push() {
 }
 
 # ── Python modules ────────────────────────────────────────────────────────────
-push /tmp/nh_deploy/namer_bridge/log_parser.py     "$SITE/namer_bridge/log_parser.py"
-push /tmp/nh_deploy/stash_bridge/stashdb.py        "$SITE/stash_bridge/stashdb.py"
-push /tmp/nh_deploy/web/ai_config.py               "$SITE/web/ai_config.py"
-push /tmp/nh_deploy/web/app.py                     "$SITE/web/app.py"
+push "$SRC/namer_bridge/config_reader.py"     "$SITE/namer_bridge/config_reader.py"
+push "$SRC/namer_bridge/filename_parser.py"   "$SITE/namer_bridge/filename_parser.py"
+push "$SRC/namer_bridge/hasher.py"            "$SITE/namer_bridge/hasher.py"
+push "$SRC/namer_bridge/log_parser.py"        "$SITE/namer_bridge/log_parser.py"
+push "$SRC/ollama_bridge/analyzer.py"         "$SITE/ollama_bridge/analyzer.py"
+push "$SRC/ollama_bridge/client.py"           "$SITE/ollama_bridge/client.py"
+push "$SRC/stash_bridge/stashdb.py"           "$SITE/stash_bridge/stashdb.py"
+push "$SRC/stash_bridge/theporndb.py"         "$SITE/stash_bridge/theporndb.py"
+push "$SRC/web/ai_config.py"                  "$SITE/web/ai_config.py"
+push "$SRC/web/app.py"                        "$SITE/web/app.py"
+push "$SRC/web/lookup_cache.py"               "$SITE/web/lookup_cache.py"
+push "$SRC/web/proxmox.py"                    "$SITE/web/proxmox.py"
 
 # ── Templates ─────────────────────────────────────────────────────────────────
-push /tmp/nh_deploy/templates/base.html            "$TMPL/base.html"
-push /tmp/nh_deploy/templates/dashboard.html       "$TMPL/dashboard.html"
-push /tmp/nh_deploy/templates/failed.html          "$TMPL/failed.html"
-push /tmp/nh_deploy/templates/mounts.html          "$TMPL/mounts.html"
-push /tmp/nh_deploy/templates/proxmox.html         "$TMPL/proxmox.html"
-push /tmp/nh_deploy/templates/settings.html        "$TMPL/settings.html"
+push "$SRC/web/templates/base.html"             "$TMPL/base.html"
+push "$SRC/web/templates/dashboard.html"        "$TMPL/dashboard.html"
+push "$SRC/web/templates/failed.html"           "$TMPL/failed.html"
+push "$SRC/web/templates/mounts.html"           "$TMPL/mounts.html"
+push "$SRC/web/templates/pre-check.html"        "$TMPL/pre-check.html"
+push "$SRC/web/templates/proxmox.html"          "$TMPL/proxmox.html"
+push "$SRC/web/templates/settings.html"         "$TMPL/settings.html"
 
 # ── Restart service ───────────────────────────────────────────────────────────
 echo "Restarting namer-helper…"

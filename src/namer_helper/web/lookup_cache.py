@@ -26,7 +26,7 @@ def get(oshash: str) -> dict | None:
     if not f.exists():
         return None
     try:
-        data = json.loads(f.read_text())
+        data = json.loads(f.read_text(encoding="utf-8"))
         # Version check — stale entry → delete and force re-fetch
         if data.get("cache_version") != CACHE_VERSION:
             f.unlink(missing_ok=True)
@@ -49,7 +49,7 @@ def set(oshash: str, result: dict) -> None:
         entry["cache_version"] = CACHE_VERSION
         entry["cached_at"] = int(time.time())
         entry.pop("cached", None)
-        (CACHE_DIR / f"{oshash}.json").write_text(json.dumps(entry))
+        (CACHE_DIR / f"{oshash}.json").write_text(json.dumps(entry), encoding="utf-8")
     except Exception:
         pass
 

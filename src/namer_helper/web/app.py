@@ -111,10 +111,11 @@ def _list_failed_files(failed_dir: Path) -> list[dict]:
 
 def _read_cfg_value(cfg_path: Path, key: str) -> str:
     try:
-        for line in cfg_path.read_text().splitlines():
+        for line in cfg_path.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
-            if stripped.startswith(key) and "=" in stripped:
-                return stripped.split("=", 1)[1].strip()
+            current_key, sep, current_value = stripped.partition("=")
+            if sep and current_key.strip() == key:
+                return current_value.strip()
     except Exception:
         pass
     return ""
@@ -122,17 +123,18 @@ def _read_cfg_value(cfg_path: Path, key: str) -> str:
 
 def _write_cfg_value(cfg_path: Path, key: str, value: str) -> bool:
     try:
-        lines = cfg_path.read_text().splitlines()
+        lines = cfg_path.read_text(encoding="utf-8").splitlines()
         new_lines, found = [], False
         for line in lines:
-            if line.strip().startswith(key) and "=" in line:
+            current_key, sep, _ = line.strip().partition("=")
+            if sep and current_key.strip() == key:
                 new_lines.append(f"{key} = {value}")
                 found = True
             else:
                 new_lines.append(line)
         if not found:
             new_lines.append(f"{key} = {value}")
-        cfg_path.write_text("\n".join(new_lines) + "\n")
+        cfg_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
         return True
     except Exception:
         return False
@@ -146,6 +148,21 @@ def _safe_path(directory: Path, name: str) -> Path | None:
         return resolved
     except ValueError:
         return None
+
+
+def _move_to_directory(src: Path, target_dir: Path) -> tuple[bool, str | None]:
+    """Move src into target_dir without overwriting an existing file."""
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest = target_dir / src.name
+    if dest.exists():
+        return False, f"Zieldatei existiert bereits: {dest.name}"
+    src.rename(dest)
+    return True, None
+
+
+def _clean_lxc_id(value: object) -> str:
+    text = str(value or "103").strip()
+    return text if re.fullmatch(r"\d+", text) else "103"
 
 
 def create_app(
@@ -187,11 +204,16 @@ def create_app(
             work_dir: Path = paths.get("work_dir", Path("/var/lib/namer/work"))  # type: ignore
             watch_dir: Path = paths.get("watch_dir", Path("/var/lib/namer/watch"))  # type: ignore
             moved = 0
+            skipped = 0
             for item in list(work_dir.iterdir()):
-                dest = watch_dir / item.name
-                item.rename(dest)
-                moved += 1
-            return {"ok": True, "deleted": moved}
+                if not item.is_file():
+                    continue
+                ok, _ = _move_to_directory(item, watch_dir)
+                if ok:
+                    moved += 1
+                else:
+                    skipped += 1
+            return {"ok": True, "moved": moved, "skipped": skipped}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -265,6 +287,8 @@ def create_app(
         try:
             body = await request.json()
             value = body.get("value", "").strip()
+            if value and not value.isdigit():
+                return {"ok": False, "error": "retry_time muss eine Zahl sein"}
             ok = _write_cfg_value(namer_config, "retry_time", value)
             return {"ok": ok}
         except Exception as e:
@@ -286,7 +310,10 @@ def create_app(
                         continue
                     if video.name.startswith(".") or video.name.startswith("._"):
                         continue
-                    video.rename(watch_dir / video.name)
+                    ok, _ = _move_to_directory(video, watch_dir)
+                    if not ok:
+                        skipped += 1
+                        continue
                     json_gz = _safe_path(failed_dir, f"{video.stem}_namer.json.gz")
                     if json_gz and json_gz.exists():
                         try:
@@ -308,7 +335,9 @@ def create_app(
             watch_dir = paths["watch_dir"]
             video = _safe_path(failed_dir, name)
             if video and video.exists():
-                video.rename(watch_dir / name)
+                ok, _ = _move_to_directory(video, watch_dir)
+                if not ok:
+                    return RedirectResponse("/failed", status_code=303)
                 stem = Path(name).stem
                 json_gz = _safe_path(failed_dir, f"{stem}_namer.json.gz")
                 if json_gz and json_gz.exists():
@@ -498,7 +527,7 @@ def create_app(
                 host=body.get("host", "").strip(),
                 user=body.get("user", "root").strip() or "root",
                 port=int(body.get("port", 22)),
-                lxc_id=body.get("lxc_id", "103").strip(),
+                lxc_id=_clean_lxc_id(body.get("lxc_id", "103")),
             )
             save_proxmox_config(helper_config_dir, cfg)
             return {"ok": True}
@@ -516,7 +545,7 @@ def create_app(
                 host=body["host"].strip(),
                 user=body.get("user", "root").strip() or "root",
                 port=int(body.get("port", 22)),
-                lxc_id=body.get("lxc_id", "103").strip(),
+                lxc_id=_clean_lxc_id(body.get("lxc_id", "103")),
             )
         else:
             cfg = load_proxmox_config(helper_config_dir)
@@ -562,7 +591,7 @@ def create_app(
         cfg = load_proxmox_config(helper_config_dir)
         if not cfg.host:
             return {"ok": False, "output": "Proxmox SSH nicht konfiguriert"}
-        ok, out = run_remote(cfg, f"pct restart {cfg.lxc_id}", timeout=30)
+        ok, out = run_remote(cfg, f"pct restart {_clean_lxc_id(cfg.lxc_id)}", timeout=30)
         return {"ok": ok, "output": out}
 
     # ── Pre-Check directory ───────────────────────────────────────────────────
@@ -1120,7 +1149,9 @@ def create_app(
             src = _safe_path(pre_dir, name)
             if not src or not src.exists():
                 return {"ok": False, "error": "Datei nicht gefunden"}
-            src.rename(watch_dir / src.name)
+            ok, error = _move_to_directory(src, watch_dir)
+            if not ok:
+                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
             return {"ok": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1140,8 +1171,11 @@ def create_app(
                 if video.name.startswith(".") or video.name.startswith("._"):
                     continue
                 try:
-                    video.rename(watch_dir / video.name)
-                    count += 1
+                    ok, _ = _move_to_directory(video, watch_dir)
+                    if ok:
+                        count += 1
+                    else:
+                        skipped += 1
                 except OSError:
                     skipped += 1
             return {"ok": True, "count": count, "skipped": skipped}
