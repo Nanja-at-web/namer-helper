@@ -622,9 +622,19 @@ def create_app(
             pass
         return None
 
+    def _format_duration(seconds: int | None) -> str:
+        if not seconds:
+            return "—"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
     def _list_pre_check_files(pre_dir: Path) -> list[dict]:
         if not pre_dir.exists():
             return []
+        from namer_helper.namer_bridge.hasher import get_video_info
+
         items = []
         for f in sorted(pre_dir.rglob("*")):
             if not f.is_file():
@@ -639,11 +649,17 @@ def create_app(
             except OSError:
                 size_bytes = 0
                 size_mb = 0
+            try:
+                duration_seconds = int(get_video_info(f).get("duration") or 0)
+            except Exception:
+                duration_seconds = 0
             items.append({
                 "name": f.name,
                 "name_encoded": quote(f.name),
                 "size_mb": size_mb,
                 "size_bytes": size_bytes,
+                "duration_seconds": duration_seconds,
+                "duration_hms": _format_duration(duration_seconds),
             })
         return items
 

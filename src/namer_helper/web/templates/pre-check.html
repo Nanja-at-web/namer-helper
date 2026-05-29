@@ -77,6 +77,21 @@
       class="w-20 text-sm border border-gray-200 rounded px-2 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300">
     <span class="text-xs text-gray-400">MB</span>
   </div>
+  <!-- Dauer-Filter -->
+  <div class="flex items-center gap-1">
+    <span class="text-xs text-gray-400 whitespace-nowrap">Dauer</span>
+    <select id="duration-op" onchange="applyFilterSort()"
+      class="text-sm border border-gray-200 rounded px-1 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+      <option value="">—</option>
+      <option value="gte">≥</option>
+      <option value="lte">≤</option>
+      <option value="gt">&gt;</option>
+      <option value="lt">&lt;</option>
+    </select>
+    <input id="duration-val" type="text" placeholder="HH:MM:SS"
+      oninput="applyFilterSort()"
+      class="w-24 text-sm border border-gray-200 rounded px-2 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300">
+  </div>
   <!-- Zähler + Reset -->
   <span id="filter-count" class="text-xs text-gray-400 whitespace-nowrap"></span>
   <button onclick="clearFilter()" id="filter-clear"
@@ -103,18 +118,25 @@
             Größe
           </button>
         </th>
+        <th class="text-right px-4 py-3">
+          <button onclick="setSort('duration')" class="flex items-center gap-1 ml-auto hover:text-gray-700 group">
+            <span id="sort-duration-icon" class="text-gray-300 group-hover:text-gray-500">↕</span>
+            Dauer
+          </button>
+        </th>
         <th class="text-right px-4 py-3">Aktionen</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100" id="file-table">
       {% for f in files %}
-      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}">
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds }}">
         <td class="px-4 py-3">
           <input type="checkbox" class="file-cb rounded border-gray-300"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
         </td>
         <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">{{ f.name }}</td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
+        <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap font-mono">{{ f.duration_hms }}</td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
           <button
             onclick="openPlayer('{{ f.name_encoded }}')"
@@ -683,7 +705,7 @@ function escHtml(str) {
 }
 
 // ── Sortierung + Filter ──
-let sortCol = null;   // 'name' | 'size'
+let sortCol = null;   // 'name' | 'size' | 'duration'
 let sortAsc = true;
 
 function setSort(col) {
@@ -692,11 +714,24 @@ function setSort(col) {
   applyFilterSort();
 }
 
+function parseDurationInput(value) {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return parseInt(raw, 10) * 60;
+  const parts = raw.split(':').map(p => parseInt(p, 10));
+  if (parts.some(Number.isNaN)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
 function applyFilterSort() {
   const q    = (document.getElementById('file-filter').value || '').toLowerCase();
   const op   = document.getElementById('size-op').value;
   const valMB = parseFloat(document.getElementById('size-val').value);
   const valBytes = isNaN(valMB) ? null : valMB * 1_048_576;
+  const durationOp = document.getElementById('duration-op').value;
+  const durationVal = parseDurationInput(document.getElementById('duration-val').value);
 
   const tbody = document.getElementById('file-table');
   const pairs = [];
@@ -715,18 +750,29 @@ function applyFilterSort() {
     return true;
   }
 
-  const filtered = pairs.filter(({ row }) =>
-    (!q || row.dataset.name.includes(q)) && sizeMatch(row)
-  );
-  const hidden = pairs.filter(({ row }) =>
-    !(!q || row.dataset.name.includes(q)) || !sizeMatch(row)
-  );
+  function durationMatch(row) {
+    if (!durationOp || durationVal === null) return true;
+    const d = parseFloat(row.dataset.duration || '0');
+    if (durationOp === 'gte') return d >= durationVal;
+    if (durationOp === 'lte') return d <= durationVal;
+    if (durationOp === 'gt')  return d >  durationVal;
+    if (durationOp === 'lt')  return d <  durationVal;
+    return true;
+  }
+
+  const rowMatches = row => (!q || row.dataset.name.includes(q)) && sizeMatch(row) && durationMatch(row);
+  const filtered = pairs.filter(({ row }) => rowMatches(row));
+  const hidden = pairs.filter(({ row }) => !rowMatches(row));
 
   // Sort
   if (sortCol) {
     filtered.sort((a, b) => {
-      let va = sortCol === 'size' ? parseFloat(a.row.dataset.size) : a.row.dataset.name;
-      let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size) : b.row.dataset.name;
+      let va = sortCol === 'size' ? parseFloat(a.row.dataset.size)
+        : sortCol === 'duration' ? parseFloat(a.row.dataset.duration || '0')
+        : a.row.dataset.name;
+      let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size)
+        : sortCol === 'duration' ? parseFloat(b.row.dataset.duration || '0')
+        : b.row.dataset.name;
       if (va < vb) return sortAsc ? -1 : 1;
       if (va > vb) return sortAsc ? 1 : -1;
       return 0;
@@ -747,7 +793,7 @@ function applyFilterSort() {
   });
 
   // Update sort icons
-  ['name', 'size'].forEach(c => {
+  ['name', 'size', 'duration'].forEach(c => {
     const el = document.getElementById('sort-' + c + '-icon');
     if (!el) return;
     el.textContent = sortCol !== c ? '↕' : sortAsc ? '↑' : '↓';
@@ -757,7 +803,7 @@ function applyFilterSort() {
   // Counter + reset button
   const total = pairs.length;
   const shown = filtered.length;
-  const hasFilter = q || (op && valBytes !== null);
+  const hasFilter = q || (op && valBytes !== null) || (durationOp && durationVal !== null);
   document.getElementById('filter-count').textContent =
     hasFilter ? `${shown} von ${total}` : `${total} Dateien`;
   document.getElementById('filter-clear').classList.toggle('hidden', !hasFilter);
@@ -767,6 +813,8 @@ function clearFilter() {
   document.getElementById('file-filter').value = '';
   document.getElementById('size-op').value = '';
   document.getElementById('size-val').value = '';
+  document.getElementById('duration-op').value = '';
+  document.getElementById('duration-val').value = '';
   applyFilterSort();
 }
 
