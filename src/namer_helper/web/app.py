@@ -647,11 +647,21 @@ def create_app(
             except OSError:
                 size_bytes = 0
                 size_mb = 0
+            try:
+                from namer_helper.web import metadata_cache
+
+                cached_meta = metadata_cache.get(f) or {}
+            except Exception:
+                cached_meta = {}
+            duration_seconds = int(cached_meta.get("duration_seconds") or 0)
             items.append({
                 "name": f.name,
                 "name_encoded": quote(f.name),
                 "size_mb": size_mb,
                 "size_bytes": size_bytes,
+                "duration_seconds": duration_seconds,
+                "duration_hms": _format_duration(duration_seconds),
+                "duration_cached": bool(duration_seconds),
             })
         return items
 
@@ -688,11 +698,18 @@ def create_app(
             return {"ok": False, "error": "Datei nicht gefunden", "duration_seconds": 0, "duration_hms": "—"}
         try:
             from namer_helper.namer_bridge.hasher import get_video_info
+            from namer_helper.web import metadata_cache
+
+            cached_meta = metadata_cache.get(video_path) or {}
+            cached_seconds = int(cached_meta.get("duration_seconds") or 0)
+            if cached_seconds:
+                return {"ok": True, "cached": True, "duration_seconds": cached_seconds, "duration_hms": _format_duration(cached_seconds)}
 
             loop = asyncio.get_running_loop()
             info = await loop.run_in_executor(None, get_video_info, video_path)
             seconds = int(info.get("duration") or 0)
-            return {"ok": True, "duration_seconds": seconds, "duration_hms": _format_duration(seconds)}
+            metadata_cache.set(video_path, {"duration_seconds": seconds})
+            return {"ok": True, "cached": False, "duration_seconds": seconds, "duration_hms": _format_duration(seconds)}
         except Exception as exc:
             return {"ok": False, "error": str(exc), "duration_seconds": 0, "duration_hms": "—"}
 
