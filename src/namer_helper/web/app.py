@@ -8,7 +8,7 @@ import asyncio
 import re
 import subprocess
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
@@ -1203,6 +1203,48 @@ def create_app(
                 "ollama": None,
                 "identification": {"status": "unknown", "confidence": 0.0, "source": "none", "reason": str(exc), "suggested_name": None, "action": "review", "signals": []},
             }
+
+    async def _run_pre_check_scan(scan_id: str, names: list[str]) -> None:
+        from namer_helper.web import scan_status
+
+        try:
+            for name in names:
+                scan_status.mark_running(scan_id, name)
+                result = await pre_check_lookup(name)
+                scan_status.mark_done(
+                    scan_id,
+                    name,
+                    ok=bool(result.get("ok")),
+                    error=result.get("error"),
+                    identification=result.get("identification"),
+                )
+            scan_status.finish(scan_id)
+        except Exception as exc:
+            scan_status.fail(scan_id, str(exc))
+
+    @app.post("/pre-check/scan/start")
+    async def pre_check_scan_start(request: Request):
+        from namer_helper.web import scan_status
+
+        body = await request.json()
+        names = body.get("names") if isinstance(body, dict) else None
+        if not isinstance(names, list):
+            return {"ok": False, "error": "Keine Dateiliste erhalten"}
+        clean_names = [unquote(str(name)) for name in names if str(name).strip()]
+        if not clean_names:
+            return {"ok": False, "error": "Keine Dateien ausgewählt"}
+        current = scan_status.load()
+        if current.get("active"):
+            return {"ok": False, "error": "Ein Scan läuft bereits", "scan": current}
+        state = scan_status.start(clean_names)
+        asyncio.create_task(_run_pre_check_scan(state["scan_id"], clean_names))
+        return {"ok": True, "scan": state}
+
+    @app.get("/pre-check/scan/status")
+    async def pre_check_scan_status():
+        from namer_helper.web import scan_status
+
+        return {"ok": True, "scan": scan_status.load()}
 
     @app.get("/pre-check/video")
     async def pre_check_video(name: str):

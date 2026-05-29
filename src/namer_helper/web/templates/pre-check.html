@@ -287,29 +287,20 @@ async function lookupSelected() {
   document.getElementById('bulk-progress').classList.remove('hidden');
   document.getElementById('action-msg').classList.add('hidden');
 
-  const total = selected.length;
-  const setProgress = (done, label) => {
-    const pct = total ? Math.round(done / total * 100) : 0;
-    document.getElementById('bulk-progress-bar').style.width = pct + '%';
-    document.getElementById('bulk-progress-count').textContent = `${done} / ${total}`;
-    document.getElementById('bulk-progress-label').textContent = label;
-  };
-  setProgress(0, 'Suche läuft…');
-
-  for (let i = 0; i < selected.length; i++) {
-    const cb = selected[i];
-    const enc = cb.dataset.encoded;
-    const row = cb.dataset.row;
-    setProgress(i, `${i + 1} / ${total} wird geprüft…`);
-    const panel = document.getElementById('lookup-' + row);
-    const content = panel.querySelector('.lookup-content');
-    content.innerHTML = '<span class="text-gray-400">Suche läuft…</span>';
-    panel.classList.remove('hidden');
-    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-    await runLookup(enc, row);
+  const names = selected.map(cb => decodeURIComponent(cb.dataset.encoded || ''));
+  const res = await fetch('/pre-check/scan/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({names}),
+  });
+  const json = await res.json();
+  if (!json.ok) {
+    showMsg('✗ ' + (json.error || 'Scan konnte nicht gestartet werden'), false);
+    if (json.scan) renderScanStatus(json.scan);
+    return;
   }
-  setProgress(total, `✓ ${total} Dateien geprüft.`);
-  setTimeout(() => document.getElementById('bulk-progress').classList.add('hidden'), 3000);
+  renderScanStatus(json.scan);
+  pollScanStatus();
 }
 
 async function doLookup(encodedName, rowIndex) {
@@ -626,6 +617,44 @@ async function runLookup(encodedName, rowIndex) {
   content.innerHTML = html;
 }
 
+let scanPollTimer = null;
+
+function renderScanStatus(scan) {
+  if (!scan || scan.status === 'idle' || !scan.total) return;
+  document.getElementById('bulk-progress').classList.remove('hidden');
+  const done = scan.done || 0;
+  const total = scan.total || 0;
+  const pct = total ? Math.round(done / total * 100) : 0;
+  const activeText = scan.current ? ` · ${escHtml(scan.current)}` : '';
+  const label = scan.status === 'finished'
+    ? `✓ ${total} Dateien geprüft.`
+    : scan.status === 'error'
+      ? `✗ Scanfehler: ${escHtml(scan.error || 'unbekannt')}`
+      : `Server-Scan läuft${activeText}`;
+  document.getElementById('bulk-progress-bar').style.width = pct + '%';
+  document.getElementById('bulk-progress-count').textContent = `${done} / ${total}`;
+  document.getElementById('bulk-progress-label').innerHTML = label;
+  if (!scan.active && scan.status === 'finished') {
+    setTimeout(() => document.getElementById('bulk-progress').classList.add('hidden'), 5000);
+  }
+}
+
+async function pollScanStatus() {
+  if (scanPollTimer) clearTimeout(scanPollTimer);
+  try {
+    const res = await fetch('/pre-check/scan/status');
+    const json = await res.json();
+    if (json.ok) {
+      renderScanStatus(json.scan);
+      if (json.scan && json.scan.active) {
+        scanPollTimer = setTimeout(pollScanStatus, 2000);
+      }
+    }
+  } catch (e) {
+    scanPollTimer = setTimeout(pollScanStatus, 5000);
+  }
+}
+
 async function submitToStashDB(inputId, encodedName, rowIndex) {
   const input = document.getElementById(inputId);
   const urlVal = (input ? input.value : '').trim();
@@ -894,6 +923,7 @@ async function loadDurations() {
 document.addEventListener('DOMContentLoaded', () => {
   applyFilterSort();
   loadDurations();
+  pollScanStatus();
 });
 
 function openPlayer(encodedName) {
