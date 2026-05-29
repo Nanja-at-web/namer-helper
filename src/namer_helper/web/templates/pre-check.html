@@ -267,6 +267,42 @@ async function runLookup(encodedName, rowIndex) {
 
   let html = '';
 
+  // Beste Identifikation
+  if (json.identification) {
+    const id = json.identification;
+    const pct = Math.round((id.confidence || 0) * 100);
+    const cfg = {
+      duplicate:  { label: 'Duplikat',       cls: 'bg-red-50 border-red-200 text-red-700',       bar: 'bg-red-500' },
+      identified: { label: 'Eindeutig',      cls: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' },
+      likely:     { label: 'Wahrscheinlich', cls: 'bg-blue-50 border-blue-200 text-blue-700',    bar: 'bg-blue-500' },
+      possible:   { label: 'Möglich',        cls: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-500' },
+      unknown:    { label: 'Unklar',         cls: 'bg-gray-50 border-gray-200 text-gray-500',    bar: 'bg-gray-400' },
+    }[id.status || 'unknown'] || { label: 'Unklar', cls: 'bg-gray-50 border-gray-200 text-gray-500', bar: 'bg-gray-400' };
+    html += `<div class="mb-3 rounded border p-3 ${cfg.cls}">`;
+    html += `<div class="flex items-center gap-2 mb-1">`;
+    html += `<span class="text-xs uppercase tracking-wide font-bold">${cfg.label}</span>`;
+    html += `<span class="text-xs font-mono">${pct}%</span>`;
+    if (id.source) html += `<span class="text-xs opacity-70">${escHtml(id.source)}</span>`;
+    html += `</div>`;
+    html += `<div class="w-full bg-white/70 rounded-full h-1.5 mb-2"><div class="${cfg.bar} h-1.5 rounded-full" style="width:${pct}%"></div></div>`;
+    if (id.reason) html += `<div class="text-xs mb-2">${escHtml(id.reason)}</div>`;
+    if (id.signals && id.signals.length) {
+      html += `<div class="flex flex-wrap gap-1 mb-2">`;
+      html += id.signals.map(s => `<span class="text-xs bg-white/70 rounded px-1.5 py-0.5">${escHtml(s)}</span>`).join('');
+      html += `</div>`;
+    }
+    if (id.suggested_name) {
+      const recInput = `inp-ident-${rowIndex}`;
+      html += `<input id="${recInput}" type="text" value="${escHtml(id.suggested_name)}"
+        class="w-full text-sm font-mono border border-white/80 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-2 focus:ring-green-300 bg-white">`;
+      html += `<div class="flex justify-end">`;
+      html += `<button onclick="doRenameFromInput('${recInput}','${encodedName}',${rowIndex})"
+        class="text-xs px-3 py-1 rounded bg-white/80 hover:bg-white text-gray-800 border border-white">✔ Besten Vorschlag übernehmen</button>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
   // Duplikat-Warnung
   if (json.dest_duplicate) {
     html += `<div class="flex items-center gap-2 mb-2 bg-red-50 border border-red-200 rounded px-2 py-1">`;

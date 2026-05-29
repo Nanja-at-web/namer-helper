@@ -255,19 +255,43 @@ class ThePornDBClient:
 
         performers = performers or []
 
-        # Build enriched search term: title + up to 2 performer names
-        term_parts = [title.strip()]
-        for p in performers[:2]:
-            if p.strip():
-                term_parts.append(p.strip())
-        term = " ".join(term_parts)
+        terms: list[str] = []
+        base_title = title.strip()
+        clean_perfs = [p.strip() for p in performers[:3] if p.strip()]
+        if base_title:
+            terms.append(base_title)
+        if clean_perfs and base_title:
+            terms.append(f"{clean_perfs[0]} {base_title}")
+        if len(clean_perfs) >= 2:
+            terms.append(" ".join(clean_perfs[:2]))
+            if date and len(date) >= 4:
+                terms.append(f"{' '.join(clean_perfs[:2])} {date[:4]}")
+        if studio and base_title:
+            terms.append(f"{studio} {base_title}")
+        if date and len(date) >= 4 and base_title:
+            terms.append(f"{base_title} {date[:4]}")
 
-        body, err = self._post(_SEARCH_QUERY, {"term": term})
-        if err:
-            return ThePornDBResult(error=err)
+        seen_terms: set[str] = set()
+        seen_ids: set[str] = set()
+        candidates: list[ThePornDBScene] = []
+        last_error: str | None = None
+        for term in terms:
+            key = term.lower().strip()
+            if not key or key in seen_terms:
+                continue
+            seen_terms.add(key)
+            body, err = self._post(_SEARCH_QUERY, {"term": term})
+            if err:
+                last_error = err
+                continue
+            raw = (body.get("data") or {}).get("searchScene") or []
+            for scene in self._parse_scenes(raw, "title"):
+                if scene.id and scene.id not in seen_ids:
+                    seen_ids.add(scene.id)
+                    candidates.append(scene)
 
-        raw = (body.get("data") or {}).get("searchScene") or []
-        candidates = self._parse_scenes(raw, "title")
+        if not candidates and last_error:
+            return ThePornDBResult(error=last_error, match_method="title")
 
         # Score and filter
         for scene in candidates:

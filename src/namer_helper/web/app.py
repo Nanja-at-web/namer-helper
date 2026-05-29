@@ -27,6 +27,7 @@ from namer_helper.web.mounts import (
     save_mounts,
 )
 from namer_helper.web.ai_config import AIConfig, load_ai_config, save_ai_config
+from namer_helper.web.identification import build_identification
 from namer_helper.web.proxmox import (
     ensure_ssh_key,
     load_proxmox_config,
@@ -1031,18 +1032,30 @@ def create_app(
                 else:
                     tpdb_crosscheck = "not_found"
 
+            filename_parsed = {
+                "cleaned": parsed.cleaned,
+                "performers": parsed.performers,
+                "studio": parsed.studio,
+                "date": parsed.date,
+                "resolution": parsed.resolution,
+                "tech_tags": parsed.tech_tags,
+                "confidence": parsed.confidence,
+            }
+            identification = build_identification(
+                original_name=name,
+                stashdb_scenes=stashdb_scenes,
+                stashdb_suggested=stashdb_suggested,
+                tpdb_scenes=tpdb_scenes,
+                tpdb_suggested=tpdb_suggested,
+                ollama=ollama_result,
+                filename_parsed=filename_parsed,
+                dest_duplicate=dest_duplicate,
+            )
             result = {
                 "ok": True,
                 "hashes": hashes,
-                "filename_parsed": {
-                    "cleaned": parsed.cleaned,
-                    "performers": parsed.performers,
-                    "studio": parsed.studio,
-                    "date": parsed.date,
-                    "resolution": parsed.resolution,
-                    "tech_tags": parsed.tech_tags,
-                    "confidence": parsed.confidence,
-                },
+                "filename_parsed": filename_parsed,
+                "identification": identification,
                 "stashdb_scenes": stashdb_scenes,
                 "stashdb_error": stashdb_error,
                 "stashdb_suggested": stashdb_suggested,
@@ -1071,6 +1084,7 @@ def create_app(
                 "tpdb_crosscheck": "skipped",
                 "tpdb_match_method": "hash",
                 "ollama": None,
+                "identification": {"status": "unknown", "confidence": 0.0, "source": "none", "reason": str(exc), "suggested_name": None, "action": "review", "signals": []},
             }
 
     @app.get("/pre-check/video")

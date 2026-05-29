@@ -34,6 +34,7 @@ push "$SRC/stash_bridge/stashdb.py"           "$SITE/stash_bridge/stashdb.py"
 push "$SRC/stash_bridge/theporndb.py"         "$SITE/stash_bridge/theporndb.py"
 push "$SRC/web/ai_config.py"                  "$SITE/web/ai_config.py"
 push "$SRC/web/app.py"                        "$SITE/web/app.py"
+push "$SRC/web/identification.py"             "$SITE/web/identification.py"
 push "$SRC/web/lookup_cache.py"               "$SITE/web/lookup_cache.py"
 push "$SRC/web/proxmox.py"                    "$SITE/web/proxmox.py"
 
