@@ -1258,6 +1258,13 @@ def create_app(
             src = _safe_path(pre_dir, name)
             if not src or not src.exists():
                 return {"ok": False, "error": "Datei nicht gefunden"}
+            try:
+                from namer_helper.web import metadata_cache
+
+                cached_meta = metadata_cache.get(src) or {}
+            except Exception:
+                metadata_cache = None  # type: ignore[assignment]
+                cached_meta = {}
             suggested = new_name.strip()
             if Path(suggested).suffix.lower() not in _VIDEO_EXTS:
                 suggested = suggested + src.suffix
@@ -1267,7 +1274,18 @@ def create_app(
             if dst.exists():
                 return {"ok": False, "error": "Datei mit diesem Namen existiert bereits"}
             src.rename(dst)
-            return {"ok": True, "new_name": dst.name}
+            if cached_meta and metadata_cache is not None:
+                metadata_cache.set(dst, cached_meta)
+                metadata_cache.invalidate(src)
+            duration_seconds = int(cached_meta.get("duration_seconds") or 0)
+            return {
+                "ok": True,
+                "new_name": dst.name,
+                "name_encoded": quote(dst.name),
+                "duration_seconds": duration_seconds,
+                "duration_hms": _format_duration(duration_seconds),
+                "duration_cached": bool(duration_seconds),
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
