@@ -210,13 +210,13 @@ def build_identification(
         elif score >= 50:
             status, confidence, action = "likely", 0.78, "review"
         else:
-            status, confidence, action = "possible", 0.60, "review"
+            status, confidence, action = "possible", 0.40, "review"
         return Identification(
             status=status,
             confidence=confidence,
             source="ThePornDB Movie",
             reason=f"ThePornDB Movie-Kontextscore {score}",
-            suggested_name=tpdb_movie_suggested or _with_ext(_scene_name(movie), ext),
+            suggested_name=(tpdb_movie_suggested or _with_ext(_scene_name(movie), ext)) if score >= 50 else None,
             action=action,
             signals=[f"Movie Score {score}"],
         ).to_dict()
@@ -265,13 +265,13 @@ def build_identification(
         elif score >= 50:
             status, confidence, action = "likely", 0.76, "review"
         else:
-            status, confidence, action = "possible", 0.58, "review"
+            status, confidence, action = "possible", 0.35, "review"
         return Identification(
             status=status,
             confidence=confidence,
             source="ThePornDB Kontextsuche",
             reason=f"ThePornDB Kontextscore {score}",
-            suggested_name=tpdb_suggested or _with_ext(_scene_name(tpdb), ext),
+            suggested_name=(tpdb_suggested or _with_ext(_scene_name(tpdb), ext)) if score >= 50 else None,
             action=action,
             signals=[f"TPDB Score {score}"],
         ).to_dict()

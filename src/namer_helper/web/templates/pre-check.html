@@ -399,9 +399,10 @@ async function runLookup(encodedName, rowIndex) {
       html += `<div class="text-xs text-gray-400">${escHtml(o.error)}</div>`;
     } else {
       const confPct = Math.round((o.confidence || 0) * 100);
-      const confColor = confPct >= 90 ? 'text-green-600' : confPct >= 70 ? 'text-yellow-600' : 'text-gray-400';
+      const confColor = confPct >= 90 ? 'text-yellow-600' : confPct >= 70 ? 'text-yellow-600' : 'text-gray-400';
       html += `<div class="flex items-center gap-1 mb-1">`;
       html += `<span class="text-xs font-bold ${confColor}">${confPct}%</span>`;
+      html += `<span class="text-xs text-gray-400">unbestätigt</span>`;
       html += `</div>`;
       html += `<input id="inp-ollama-${rowIndex}" type="text" value="${escHtml(o.cleaned_name)}"
         class="w-full text-sm font-mono border border-gray-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-2 focus:ring-indigo-300">`;
@@ -618,7 +619,10 @@ function renderSource(label, color, scenes, error, suggested, encodedName, rowIn
   };
   const c = colors[color] || colors.purple;
   let html = `<div class="mb-3">`;
-  html += `<div class="text-xs font-semibold uppercase tracking-wide mb-1 ${c.badge.split(' ')[0]}">${label} Fingerprint-Treffer</div>`;
+  const sourceTitle = (scenes && scenes.length > 0)
+    ? `${label} ${scenes[0].match_via === 'fingerprint' || scenes[0].match_method === 'hash' ? 'Fingerprint-Treffer' : 'Kontext-Treffer'}`
+    : `${label}`;
+  html += `<div class="text-xs font-semibold uppercase tracking-wide mb-1 ${c.badge.split(' ')[0]}">${sourceTitle}</div>`;
   if (scenes && scenes.length > 0) {
     scenes.forEach(s => {
       html += `<div class="mb-2 bg-white rounded border ${c.border} p-2">`;

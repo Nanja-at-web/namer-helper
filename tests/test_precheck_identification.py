@@ -137,3 +137,31 @@ def test_identification_accepts_tpdb_movie_context_match():
     assert result["source"] == "ThePornDB Movie"
     assert result["action"] == "rename"
     assert result["suggested_name"] == "Movie Studio - 2020-05-06 - Feature Movie.mp4"
+
+
+
+def test_identification_hides_low_score_tpdb_scene_suggestion():
+    result = build_identification(
+        original_name="scene_004.mp4",
+        stashdb_scenes=[],
+        stashdb_suggested=None,
+        tpdb_scenes=[{
+            "title": "Weak Match",
+            "date": "2020-01-01",
+            "site": "Wrong Studio",
+            "performers": [],
+            "duration": None,
+            "score": 20,
+            "match_method": "title",
+        }],
+        tpdb_suggested="Wrong Studio - 2020-01-01 - Weak Match.mp4",
+        ollama=None,
+        filename_parsed=None,
+        dest_duplicate=None,
+        local_duration=9106,
+    )
+
+    assert result["status"] == "possible"
+    assert result["confidence"] <= 0.4
+    assert result["suggested_name"] is None
+    assert result["action"] == "review"

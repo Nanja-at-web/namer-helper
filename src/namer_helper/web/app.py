@@ -811,7 +811,7 @@ def create_app(
                 if not known:
                     return None
                 ctx_dur = hashes.get("duration")
-                ctx_stu = parsed.studio or hashes.get("logo_studio") or vinfo.get("meta_studio")
+                ctx_stu = parsed.studio or vinfo.get("meta_studio") or vinfo.get("meta_copyright")
                 ctx_dt  = parsed.date or vinfo.get("meta_date")
                 return StashDBClient(api_key=ai_cfg.stashdb_api_key).search_by_performer(
                     known, studio=ctx_stu, date=ctx_dt, duration=ctx_dur
@@ -819,7 +819,7 @@ def create_app(
 
             def _stashdb_context():
                 ctx_dur = hashes.get("duration")
-                ctx_stu = parsed.studio or hashes.get("logo_studio") or vinfo.get("meta_studio")
+                ctx_stu = parsed.studio or vinfo.get("meta_studio") or vinfo.get("meta_copyright")
                 ctx_dt  = parsed.date or vinfo.get("meta_date")
                 return StashDBClient(api_key=ai_cfg.stashdb_api_key).search_by_context(
                     title=parsed.cleaned or "",
@@ -915,7 +915,7 @@ def create_app(
                     parsed.performers = _studio_parts
                     parsed.studio = None
 
-            if has_primary_result or (tpdb_result and tpdb_result.found) or parsed.performers:
+            if has_primary_result or (tpdb_result and tpdb_result.found) or (tpdb_movie_result and tpdb_movie_result.found) or parsed.performers:
                 tpdb_key = ai_cfg.theporndb_api_key or read_namer_porndb_token(namer_config)
                 tpdb = ThePornDBClient(api_key=tpdb_key)
 
@@ -941,8 +941,9 @@ def create_app(
                         _seen.add(key)
                         ctx_performers.append(p)
 
+                # Logo detection is diagnostic only. Corner logos can be overlays,
+                # ads, trailers, or unrelated watermarks, so do not use them to bias DB search.
                 ctx_studio = (sdb_studio or parsed.studio or
-                              hashes.get("logo_studio") or
                               vinfo.get("meta_studio") or vinfo.get("meta_copyright"))
                 ctx_date = sdb_date or parsed.date or vinfo.get("meta_date")
                 ctx_duration = sdb_dur or hashes.get("duration")
@@ -1028,11 +1029,12 @@ def create_app(
                     ]
                     if tpdb_result.best:
                         b = tpdb_result.best
-                        parts = [p for p in [b.site or b.network, b.date, b.title] if p]
-                        tname = " - ".join(parts)
-                        if b.performers:
-                            tname += f" ({', '.join(b.performers[:3])})"
-                        tpdb_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
+                        if b.match_method == "hash" or b.score >= 50:
+                            parts = [p for p in [b.site or b.network, b.date, b.title] if p]
+                            tname = " - ".join(parts)
+                            if b.performers:
+                                tname += f" ({', '.join(b.performers[:3])})"
+                            tpdb_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
 
                 if tpdb_movie_result:
                     tpdb_movie_error = tpdb_movie_result.error
@@ -1056,11 +1058,12 @@ def create_app(
                     ]
                     if tpdb_movie_result.best:
                         b = tpdb_movie_result.best
-                        parts = [p for p in [b.site or b.network, b.date, b.title] if p]
-                        tname = " - ".join(parts)
-                        if b.performers:
-                            tname += f" ({', '.join(b.performers[:3])})"
-                        tpdb_movie_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
+                        if b.match_method == "hash" or b.score >= 50:
+                            parts = [p for p in [b.site or b.network, b.date, b.title] if p]
+                            tname = " - ".join(parts)
+                            if b.performers:
+                                tname += f" ({', '.join(b.performers[:3])})"
+                            tpdb_movie_suggested = re.sub(r'[<>:"/\\|?*]', "", tname).strip() + ext
 
             # Cross-check: StashDB title/performers vs TPDB + filename performers
             tpdb_crosscheck: str = "skipped"
