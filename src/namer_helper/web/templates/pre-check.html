@@ -1,0 +1,708 @@
+{% extends "base.html" %}
+{% block title %} — Pre-Check{% endblock %}
+
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <a href="/" class="text-gray-400 hover:text-gray-600 text-sm">← Dashboard</a>
+    <h1 class="text-2xl font-bold text-gray-800">pre-check/</h1>
+    <span class="text-gray-400 text-sm">({{ files | length }} Dateien)</span>
+  </div>
+  {% if files %}
+  <div class="flex gap-2">
+    <button onclick="lookupSelected()"
+      class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-4 py-2 rounded font-medium">
+      🔍 Ausgewählte prüfen
+    </button>
+    <button onclick="sendAll()"
+      class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded font-medium">
+      Alle → Watch/
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+{% if not dir_exists %}
+<div class="bg-amber-50 border border-amber-200 rounded-lg p-5 mb-6">
+  <p class="text-amber-800 font-medium">
+    Das Verzeichnis <code class="bg-amber-100 px-1 rounded">{{ pre_check_dir }}</code> existiert noch nicht.
+  </p>
+  <p class="text-sm text-amber-600 mt-1">
+    Pfad unter <a href="/settings" class="text-indigo-600 hover:underline">Einstellungen</a> ändern oder:
+  </p>
+  <button onclick="createDir()"
+    class="mt-3 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm px-4 py-2 rounded font-medium">
+    Verzeichnis anlegen
+  </button>
+</div>
+{% endif %}
+
+<div id="action-msg" class="hidden mb-4 text-sm rounded p-3"></div>
+<div id="bulk-progress" class="hidden mb-4 bg-purple-50 border border-purple-200 rounded p-3">
+  <div class="flex items-center justify-between text-sm text-purple-800 mb-1.5">
+    <span id="bulk-progress-label">Suche läuft…</span>
+    <span id="bulk-progress-count" class="font-mono text-xs">0 / 0</span>
+  </div>
+  <div class="w-full bg-purple-100 rounded-full h-2">
+    <div id="bulk-progress-bar" class="bg-purple-600 h-2 rounded-full transition-all duration-300" style="width:0%"></div>
+  </div>
+</div>
+
+{% if files %}
+<!-- Filter + Sortierleiste -->
+<div class="flex flex-wrap items-center gap-3 mb-3">
+  <!-- Dateiname-Filter -->
+  <div class="relative flex-1 min-w-48">
+    <input id="file-filter" type="text" placeholder="Dateinamen filtern…"
+      oninput="applyFilterSort()"
+      class="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-300">
+    <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+    </svg>
+  </div>
+  <!-- Größen-Filter -->
+  <div class="flex items-center gap-1">
+    <span class="text-xs text-gray-400 whitespace-nowrap">Größe</span>
+    <select id="size-op" onchange="applyFilterSort()"
+      class="text-sm border border-gray-200 rounded px-1 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+      <option value="">—</option>
+      <option value="gte">≥</option>
+      <option value="lte">≤</option>
+      <option value="gt">&gt;</option>
+      <option value="lt">&lt;</option>
+    </select>
+    <input id="size-val" type="number" min="0" step="1" placeholder="MB"
+      oninput="applyFilterSort()"
+      class="w-20 text-sm border border-gray-200 rounded px-2 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300">
+    <span class="text-xs text-gray-400">MB</span>
+  </div>
+  <!-- Zähler + Reset -->
+  <span id="filter-count" class="text-xs text-gray-400 whitespace-nowrap"></span>
+  <button onclick="clearFilter()" id="filter-clear"
+    class="hidden text-xs text-gray-400 hover:text-gray-600 underline">✕ Zurücksetzen</button>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+      <tr>
+        <th class="px-4 py-3 w-8">
+          <input type="checkbox" id="select-all" onchange="toggleAll(this.checked)"
+            class="rounded border-gray-300">
+        </th>
+        <th class="text-left px-4 py-3">
+          <button onclick="setSort('name')" class="flex items-center gap-1 hover:text-gray-700 group">
+            Dateiname
+            <span id="sort-name-icon" class="text-gray-300 group-hover:text-gray-500">↕</span>
+          </button>
+        </th>
+        <th class="text-right px-4 py-3">
+          <button onclick="setSort('size')" class="flex items-center gap-1 ml-auto hover:text-gray-700 group">
+            <span id="sort-size-icon" class="text-gray-300 group-hover:text-gray-500">↕</span>
+            Größe
+          </button>
+        </th>
+        <th class="text-right px-4 py-3">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100" id="file-table">
+      {% for f in files %}
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}">
+        <td class="px-4 py-3">
+          <input type="checkbox" class="file-cb rounded border-gray-300"
+            data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
+        </td>
+        <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">{{ f.name }}</td>
+        <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
+        <td class="px-4 py-3 text-right whitespace-nowrap">
+          <button
+            onclick="openPlayer('{{ f.name_encoded }}')"
+            class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-3 py-1 rounded mr-1"
+            title="Video abspielen">
+            ▶
+          </button>
+          <button
+            onclick="doLookup('{{ f.name_encoded }}', {{ loop.index }})"
+            class="bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs px-3 py-1 rounded mr-1">
+            🔍 Lookup
+          </button>
+          <button
+            onclick="sendToWatch('{{ f.name_encoded }}', {{ loop.index }})"
+            class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded mr-1">
+            → Watch
+          </button>
+          <button
+            onclick="confirmDelete('{{ f.name_encoded }}', {{ loop.index }}, '{{ f.name | replace("'", "\\'") }}')"
+            class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-3 py-1 rounded">
+            🗑 Löschen
+          </button>
+        </td>
+      </tr>
+      <!-- Lookup result panel -->
+      <tr id="lookup-{{ loop.index }}" class="hidden bg-purple-50">
+        <td colspan="4" class="px-4 py-3">
+          <div class="lookup-content text-sm"></div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif dir_exists %}
+<div class="bg-white rounded-lg shadow p-8 text-center text-gray-400">
+  Keine Videodateien im Pre-Check-Verzeichnis.
+</div>
+{% endif %}
+
+<script>
+function showMsg(text, ok) {
+  const el = document.getElementById('action-msg');
+  el.textContent = text;
+  el.className = 'mb-4 text-sm rounded p-3 ' + (ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
+  el.classList.remove('hidden');
+}
+
+function toggleAll(checked) {
+  // Only toggle visible rows (respects active filter)
+  document.querySelectorAll('.file-cb').forEach(cb => {
+    const row = document.getElementById('row-' + cb.dataset.row);
+    if (row && !row.classList.contains('hidden')) cb.checked = checked;
+  });
+}
+
+async function createDir() {
+  const res = await fetch('/pre-check/create-dir', {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) location.reload();
+  else showMsg('✗ ' + json.error, false);
+}
+
+async function sendToWatch(encodedName, rowIndex) {
+  const res = await fetch('/pre-check/send?name=' + encodedName, {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) {
+    document.getElementById('row-' + rowIndex)?.remove();
+    document.getElementById('lookup-' + rowIndex)?.remove();
+    showMsg('✓ Datei in watch/ verschoben.', true);
+  } else {
+    showMsg('✗ ' + json.error, false);
+  }
+}
+
+async function sendAll() {
+  if (!confirm('Alle Dateien jetzt in watch/ verschieben? Namer beginnt sofort.')) return;
+  const res = await fetch('/pre-check/send-all', {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) {
+    showMsg('✓ ' + json.count + ' Dateien in watch/ verschoben.', true);
+    setTimeout(() => location.reload(), 2000);
+  } else {
+    showMsg('✗ ' + json.error, false);
+  }
+}
+
+function confirmDelete(encodedName, rowIndex, name) {
+  if (!confirm('Datei wirklich löschen?\n' + name)) return;
+  fetch('/pre-check/delete?name=' + encodedName, {method: 'POST'}).then(() => {
+    document.getElementById('row-' + rowIndex)?.remove();
+    document.getElementById('lookup-' + rowIndex)?.remove();
+  });
+}
+
+async function lookupSelected() {
+  // Only process visible (non-filtered-out) checked rows
+  const selected = [...document.querySelectorAll('.file-cb:checked')].filter(cb => {
+    const row = document.getElementById('row-' + cb.dataset.row);
+    return row && !row.classList.contains('hidden');
+  });
+  if (!selected.length) { showMsg('Keine Dateien ausgewählt.', false); return; }
+
+  document.getElementById('bulk-progress').classList.remove('hidden');
+  document.getElementById('action-msg').classList.add('hidden');
+
+  const total = selected.length;
+  const setProgress = (done, label) => {
+    const pct = total ? Math.round(done / total * 100) : 0;
+    document.getElementById('bulk-progress-bar').style.width = pct + '%';
+    document.getElementById('bulk-progress-count').textContent = `${done} / ${total}`;
+    document.getElementById('bulk-progress-label').textContent = label;
+  };
+  setProgress(0, 'Suche läuft…');
+
+  for (let i = 0; i < selected.length; i++) {
+    const cb = selected[i];
+    const enc = cb.dataset.encoded;
+    const row = cb.dataset.row;
+    setProgress(i, `${i + 1} / ${total} wird geprüft…`);
+    const panel = document.getElementById('lookup-' + row);
+    const content = panel.querySelector('.lookup-content');
+    content.innerHTML = '<span class="text-gray-400">Suche läuft…</span>';
+    panel.classList.remove('hidden');
+    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    await runLookup(enc, row);
+  }
+  setProgress(total, `✓ ${total} Dateien geprüft.`);
+  setTimeout(() => document.getElementById('bulk-progress').classList.add('hidden'), 3000);
+}
+
+async function doLookup(encodedName, rowIndex) {
+  const panel = document.getElementById('lookup-' + rowIndex);
+  const content = panel.querySelector('.lookup-content');
+  if (!panel.classList.contains('hidden')) {
+    panel.classList.add('hidden');
+    return;
+  }
+  content.innerHTML = '<span class="text-gray-400">Suche läuft…</span>';
+  panel.classList.remove('hidden');
+  await runLookup(encodedName, rowIndex);
+}
+
+async function runLookup(encodedName, rowIndex) {
+  const panel = document.getElementById('lookup-' + rowIndex);
+  const content = panel.querySelector('.lookup-content');
+
+  const res = await fetch('/pre-check/lookup?name=' + encodedName, {method: 'POST'});
+  const json = await res.json();
+
+  let html = '';
+
+  // Duplikat-Warnung
+  if (json.dest_duplicate) {
+    html += `<div class="flex items-center gap-2 mb-2 bg-red-50 border border-red-200 rounded px-2 py-1">`;
+    html += `<span class="text-red-600 font-bold text-xs">⚠ Duplikat in dest/</span>`;
+    html += `<span class="text-xs text-red-500 font-mono truncate">${escHtml(json.dest_duplicate)}</span>`;
+    html += `</div>`;
+  }
+
+  // Cache indicator + refresh button (always shown)
+  html += `<div class="flex items-center gap-2 mb-2">`;
+  if (json.cached) {
+    html += `<span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-0.5 font-medium">⚡ Gecacht</span>`;
+    html += `<button onclick="invalidateCache('${encodedName}', ${rowIndex})"
+      class="text-xs text-gray-400 hover:text-red-500 underline">Cache löschen</button>`;
+  } else {
+    html += `<span class="text-xs text-gray-300">Ergebnis gecacht für nächste Suche</span>`;
+    html += `<button onclick="rerunLookup('${encodedName}', ${rowIndex})"
+      class="text-xs text-gray-400 hover:text-purple-600 underline">↻ Erneut prüfen</button>`;
+  }
+  html += `</div>`;
+
+  // Hashes + technical info
+  const h = json.hashes || {};
+  if (h.phash || h.oshash || h.duration || h.resolution) {
+    html += `<div class="mb-2 text-xs text-gray-400 font-mono flex flex-wrap gap-x-3 gap-y-1">`;
+    if (h.oshash)     html += `<span>oshash: ${h.oshash}</span>`;
+    if (h.phash)      html += `<span>phash: ${h.phash}</span>`;
+    if (h.duration) {
+      const m = Math.floor(h.duration / 60), s = h.duration % 60;
+      html += `<span class="text-gray-500">${m}:${String(s).padStart(2,'0')} (${h.duration}s)</span>`;
+    }
+    if (h.resolution) html += `<span class="bg-gray-100 text-gray-600 px-1 rounded">${h.resolution}</span>`;
+    html += `</div>`;
+  }
+
+  // Embedded MP4 tags
+  const hasMeta = h.meta_title || h.meta_studio || h.meta_performers || h.meta_date || h.meta_copyright || h.meta_encoded_by;
+  if (hasMeta) {
+    html += `<div class="mb-2 text-xs text-gray-400 flex flex-wrap gap-x-3 gap-y-1 items-center border-l-2 border-gray-200 pl-2">`;
+    html += `<span class="font-semibold text-gray-400 uppercase tracking-wide">MP4-Tags</span>`;
+    if (h.meta_title)      html += `<span class="text-gray-600 font-medium">${escHtml(h.meta_title)}</span>`;
+    if (h.meta_studio)     html += `<span class="bg-blue-50 text-blue-600 px-1 rounded">${escHtml(h.meta_studio)}</span>`;
+    if (h.meta_performers) html += `<span class="bg-green-50 text-green-600 px-1 rounded">${escHtml(h.meta_performers)}</span>`;
+    if (h.meta_date)       html += `<span>${escHtml(h.meta_date)}</span>`;
+    if (h.meta_copyright)  html += `<span class="text-gray-300">© ${escHtml(h.meta_copyright)}</span>`;
+    if (h.meta_encoded_by) html += `<span class="text-gray-300 italic">${escHtml(h.meta_encoded_by)}</span>`;
+    html += `</div>`;
+  }
+
+  // Filename structured extraction
+  if (json.filename_parsed) {
+    const fp = json.filename_parsed;
+    const hasFpData = fp.cleaned || fp.studio || fp.performers?.length || fp.date || fp.tech_tags?.length;
+    if (hasFpData) {
+      html += `<div class="mb-2 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1 items-center">`;
+      html += `<span class="font-semibold text-gray-400 uppercase tracking-wide">Dateiname</span>`;
+      if (fp.cleaned) html += `<span class="text-gray-700 font-medium">${escHtml(fp.cleaned)}</span>`;
+      if (fp.studio)  html += `<span class="bg-blue-50 text-blue-700 px-1 rounded">${escHtml(fp.studio)}</span>`;
+      if (fp.performers?.length) html += fp.performers.map(p => `<span class="bg-green-50 text-green-700 px-1 rounded">${escHtml(p)}</span>`).join('');
+      if (fp.date)    html += `<span class="text-gray-400">${escHtml(fp.date)}</span>`;
+      if (fp.tech_tags?.length) html += `<span class="text-gray-300 italic">${fp.tech_tags.join(' ')}</span>`;
+      const logo = h.logo_studio || '';
+      if (logo) html += `<span class="bg-violet-50 text-violet-700 border border-violet-200 rounded px-1.5 font-medium" title="Logo erkannt (Moondream)">🎬 ${escHtml(logo)}</span>`;
+      const ocr = h.ocr_text || '';
+      if (ocr) html += `<span class="text-gray-300 font-mono" title="OCR">👁 ${escHtml(ocr.replace(/\n/g,' · '))}</span>`;
+      html += `</div>`;
+    }
+  }
+
+  // StashDB
+  html += renderSource(
+    'StashDB', 'purple',
+    json.stashdb_scenes, json.stashdb_error, json.stashdb_suggested,
+    encodedName, rowIndex, 'studio'
+  );
+
+  // Ollama
+  if (json.ollama) {
+    const o = json.ollama;
+    html += `<div class="mt-3 pt-3 border-t border-purple-100">`;
+    html += `<div class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-1">Ollama Dateinamen-Vorschlag</div>`;
+    if (o.error) {
+      html += `<div class="text-xs text-gray-400">${escHtml(o.error)}</div>`;
+    } else {
+      const confPct = Math.round((o.confidence || 0) * 100);
+      const confColor = confPct >= 90 ? 'text-green-600' : confPct >= 70 ? 'text-yellow-600' : 'text-gray-400';
+      html += `<div class="flex items-center gap-1 mb-1">`;
+      html += `<span class="text-xs font-bold ${confColor}">${confPct}%</span>`;
+      html += `</div>`;
+      html += `<input id="inp-ollama-${rowIndex}" type="text" value="${escHtml(o.cleaned_name)}"
+        class="w-full text-sm font-mono border border-gray-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-2 focus:ring-indigo-300">`;
+      html += `<div class="flex justify-end mb-1">`;
+      html += `<button onclick="doRenameFromInput('inp-ollama-${rowIndex}','${encodedName}',${rowIndex})"
+        class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded">✔ Übernehmen</button>`;
+      html += `</div>`;
+      if (o.search_queries && o.search_queries.length) {
+        html += `<div class="text-xs text-gray-500 mb-1">Suchanfragen: `;
+        html += o.search_queries.map(q => `<span class="bg-indigo-50 text-indigo-700 rounded px-1">${escHtml(q)}</span>`).join(' ');
+        html += `</div>`;
+      }
+      html += `<div class="text-xs text-gray-400">${escHtml(o.reason || '')}</div>`;
+    }
+    html += `</div>`;
+  } else {
+    html += `<div class="text-xs text-gray-300 mt-2">Ollama nicht verfügbar — <a href="/settings" class="text-indigo-500 hover:underline">Einstellungen</a></div>`;
+  }
+
+  // ThePornDB Gegencheck — only shown when StashDB or Ollama produced a result
+  if (json.tpdb_crosscheck && json.tpdb_crosscheck !== 'skipped') {
+    const statusCfg = {
+      confirmed:  { label: '✓ Bestätigt',   cls: 'bg-green-100 text-green-700 border-green-200' },
+      mismatch:   { label: '⚠ Abweichung',  cls: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+      not_found:  { label: '— Kein Treffer', cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+    };
+    const st = statusCfg[json.tpdb_crosscheck] || statusCfg.not_found;
+    html += `<div class="mt-3 pt-3 border-t border-purple-100">`;
+    const methodLabel = json.tpdb_match_method === 'title' ? 'Titel-Suche' : 'Fingerprint';
+    html += `<div class="flex items-center gap-2 mb-2">`;
+    html += `<span class="text-xs font-semibold uppercase tracking-wide text-pink-700">ThePornDB Gegencheck</span>`;
+    html += `<span class="text-xs text-gray-400">via ${methodLabel}</span>`;
+    html += `<span class="ml-auto text-xs px-2 py-0.5 rounded border font-medium shrink-0 ${st.cls}">${st.label}</span>`;
+    html += `</div>`;
+    if (json.tpdb_scenes && json.tpdb_scenes.length > 0) {
+      json.tpdb_scenes.forEach(s => {
+        html += `<div class="mb-2 bg-white rounded border border-pink-200 p-2 flex gap-3">`;
+        if (s.image) {
+          html += `<img src="${escHtml(s.image)}" alt="Poster"
+            class="w-16 h-24 object-cover rounded shrink-0 bg-gray-100"
+            onerror="this.style.display='none'">`;
+        }
+        html += `<div class="flex-1 min-w-0">`;
+        html += `<div class="flex items-start gap-2 flex-wrap mb-0.5">`;
+        html += `<span class="font-medium text-gray-800 flex-1">${escHtml(s.title)}</span>`;
+        if (s.score > 0) {
+          const sc = s.score >= 80 ? 'bg-green-100 text-green-700 border-green-200'
+                   : s.score >= 50 ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                   : 'bg-orange-100 text-orange-700 border-orange-200';
+          html += `<span class="text-sm px-2 py-0.5 rounded-full border font-bold shrink-0 ${sc}">${s.score}</span>`;
+        } else {
+          html += `<span class="text-xs px-2 py-0.5 rounded-full border font-bold shrink-0 bg-blue-100 text-blue-700 border-blue-200">Fingerprint</span>`;
+        }
+        html += `</div>`;
+        if (s.score_breakdown && Object.keys(s.score_breakdown).length > 0) {
+          html += `<div class="flex flex-wrap gap-1 mb-1">`;
+          for (const [label, pts] of Object.entries(s.score_breakdown)) {
+            const chip = pts >= 30 ? 'bg-green-50 text-green-700 border-green-200'
+                       : pts >= 15 ? 'bg-blue-50 text-blue-700 border-blue-200'
+                       : 'bg-gray-50 text-gray-500 border-gray-200';
+            html += `<span class="text-xs border rounded px-1.5 py-0.5 ${chip}">+${pts} ${escHtml(label)}</span>`;
+          }
+          html += `</div>`;
+        }
+        const studio = s.site || s.network;
+        const meta = [studio, s.date, s.performers && s.performers.length ? s.performers.join(', ') : null]
+          .filter(Boolean).join(' · ');
+        if (meta) html += `<div class="text-xs text-gray-500">${escHtml(meta)}</div>`;
+        if (s.url) html += `<a href="${escHtml(s.url)}" target="_blank" class="text-xs text-indigo-600 hover:underline">${escHtml(s.url)}</a>`;
+        html += `</div></div>`;
+      });
+      if (json.tpdb_suggested) {
+        html += `<div class="mt-1 border-t border-gray-100 pt-1">`;
+        html += `<div class="text-xs text-gray-500 mb-1">Vorschlag:</div>`;
+        html += `<input id="inp-tpdb-${rowIndex}" type="text" value="${escHtml(json.tpdb_suggested)}"
+          class="w-full text-sm font-mono border border-gray-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-2 focus:ring-pink-300">`;
+        html += `<div class="flex justify-end">`;
+        html += `<button onclick="doRenameFromInput('inp-tpdb-${rowIndex}','${encodedName}',${rowIndex})"
+          class="text-xs px-3 py-1 rounded bg-pink-600 hover:bg-pink-700 text-white">✔ Übernehmen</button>`;
+        html += `</div></div>`;
+      }
+    } else if (json.tpdb_error) {
+      html += `<div class="text-xs text-gray-400">${escHtml(json.tpdb_error)}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // StashDB Fingerprint einreichen — zeige wenn kein StashDB-Treffer aber TPDB-Treffer vorhanden
+  const noStashDB = !json.stashdb_scenes || json.stashdb_scenes.length === 0;
+  const hasTpdb = json.tpdb_scenes && json.tpdb_scenes.length > 0;
+  const h2 = json.hashes || {};
+  if (noStashDB && hasTpdb && (h2.oshash || h2.phash)) {
+    html += `<div class="mt-3 pt-3 border-t border-gray-100">`;
+    html += `<div class="flex items-center gap-2 mb-1">`;
+    html += `<span class="text-xs text-gray-400">Kein StashDB-Fingerprint-Treffer — Fingerprint einreichen?</span>`;
+    html += `</div>`;
+    html += `<div class="flex gap-2 items-center">`;
+    html += `<input id="stashdb-url-${rowIndex}" type="text" placeholder="https://stashdb.org/scenes/..."
+      class="flex-1 text-xs font-mono border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-300">`;
+    html += `<button onclick="submitToStashDB('stashdb-url-${rowIndex}','${encodedName}',${rowIndex})"
+      class="text-xs px-2 py-1 rounded bg-purple-100 hover:bg-purple-200 text-purple-700 shrink-0">📤 Einreichen</button>`;
+    html += `</div>`;
+    html += `<div id="stashdb-submit-msg-${rowIndex}" class="text-xs mt-1"></div>`;
+    html += `</div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+async function submitToStashDB(inputId, encodedName, rowIndex) {
+  const input = document.getElementById(inputId);
+  const urlVal = (input ? input.value : '').trim();
+  const msgEl = document.getElementById('stashdb-submit-msg-' + rowIndex);
+  if (!urlVal) { if (msgEl) msgEl.textContent = 'Bitte StashDB-URL einfügen.'; return; }
+
+  // Extract scene_id from URL like https://stashdb.org/scenes/8ad1828b-...
+  const match = urlVal.match(/scenes\/([0-9a-f-]{36})/i);
+  if (!match) { if (msgEl) msgEl.textContent = '⚠ Ungültige StashDB-URL.'; return; }
+  const sceneId = match[1];
+
+  // Get hashes from cached lookup result
+  const panel = document.getElementById('lookup-' + rowIndex);
+  const content = panel ? panel.querySelector('.lookup-content') : null;
+  // Re-read from last JSON (stored in data attribute if set, else re-fetch)
+  if (msgEl) msgEl.textContent = '⏳ Wird eingereicht…';
+
+  const lookupRes = await fetch('/pre-check/lookup?name=' + encodedName, {method: 'POST'});
+  const json = await lookupRes.json();
+  const h = json.hashes || {};
+
+  const params = new URLSearchParams({
+    scene_id: sceneId,
+    oshash: h.oshash || '',
+    phash: h.phash || '',
+    duration: h.duration || 0,
+  });
+  const res = await fetch('/pre-check/stashdb-submit?' + params, {method: 'POST'});
+  const result = await res.json();
+  if (result.ok) {
+    if (msgEl) msgEl.innerHTML = `<span class="text-green-600">✓ ${result.submitted} Fingerprint(s) eingereicht</span>`;
+  } else {
+    if (msgEl) msgEl.innerHTML = `<span class="text-red-500">⚠ ${(result.errors || []).join(', ')}</span>`;
+  }
+}
+
+async function rerunLookup(encodedName, rowIndex) {
+  const content = document.getElementById('lookup-' + rowIndex)?.querySelector('.lookup-content');
+  if (content) content.innerHTML = '<span class="text-gray-400">Suche läuft…</span>';
+  await runLookup(encodedName, rowIndex);
+}
+
+async function invalidateCache(encodedName, rowIndex) {
+  const res = await fetch('/pre-check/cache/invalidate?name=' + encodedName, {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) {
+    const content = document.getElementById('lookup-' + rowIndex)?.querySelector('.lookup-content');
+    if (content) content.innerHTML = '<span class="text-gray-400">Cache gelöscht — Suche läuft…</span>';
+    await runLookup(encodedName, rowIndex);
+  }
+}
+
+function renderSource(label, color, scenes, error, suggested, encodedName, rowIndex, studioKey) {
+  const colors = {
+    purple: {border: 'border-purple-200', badge: 'text-purple-700 bg-purple-50', btn: 'bg-purple-600 hover:bg-purple-700 text-white'},
+    pink:   {border: 'border-pink-200',   badge: 'text-pink-700 bg-pink-50',     btn: 'bg-pink-600 hover:bg-pink-700 text-white'},
+  };
+  const c = colors[color] || colors.purple;
+  let html = `<div class="mb-3">`;
+  html += `<div class="text-xs font-semibold uppercase tracking-wide mb-1 ${c.badge.split(' ')[0]}">${label} Fingerprint-Treffer</div>`;
+  if (scenes && scenes.length > 0) {
+    scenes.forEach(s => {
+      html += `<div class="mb-2 bg-white rounded border ${c.border} p-2">`;
+      html += `<div class="font-medium text-gray-800">${escHtml(s.title)}</div>`;
+      const studio = s[studioKey] || s.studio || s.site || s.network;
+      const meta = [studio, s.date, s.performers && s.performers.length ? s.performers.join(', ') : null]
+        .filter(Boolean).join(' · ');
+      if (meta) html += `<div class="text-xs text-gray-500">${escHtml(meta)}</div>`;
+      if (s.url) html += `<a href="${escHtml(s.url)}" target="_blank" class="text-xs text-indigo-600 hover:underline">${escHtml(s.url)}</a>`;
+      html += `</div>`;
+    });
+    if (suggested) {
+      const inputId = `inp-${label}-${rowIndex}`;
+      html += `<div class="mt-1 border-t border-gray-100 pt-1">`;
+      html += `<div class="text-xs text-gray-500 mb-1">Vorschlag:</div>`;
+      html += `<input id="${inputId}" type="text" value="${escHtml(suggested)}"
+        class="w-full text-sm font-mono border border-gray-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-2 focus:ring-purple-300">`;
+      html += `<div class="flex justify-end">`;
+      html += `<button onclick="doRenameFromInput('${inputId}','${encodedName}',${rowIndex})"
+        class="text-xs px-3 py-1 rounded ${c.btn}">✔ Übernehmen</button>`;
+      html += `</div></div>`;
+    }
+  } else {
+    html += `<div class="text-xs text-gray-400">${escHtml(error || 'Keine Treffer')}</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function doRenameFromInput(inputId, encodedName, rowIndex) {
+  const input = document.getElementById(inputId);
+  const newName = input ? input.value.trim() : '';
+  if (!newName) return;
+  doRename(encodedName, newName, rowIndex);
+}
+
+async function doRename(encodedName, newName, rowIndex) {
+  const res = await fetch(`/pre-check/rename?name=${encodedName}&new_name=${encodeURIComponent(newName)}`, {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) {
+    const cell = document.getElementById('name-' + rowIndex);
+    if (cell) cell.textContent = json.new_name;
+    const panel = document.getElementById('lookup-' + rowIndex);
+    if (panel) panel.classList.add('hidden');
+    showMsg('✓ Umbenannt: ' + json.new_name, true);
+  } else {
+    showMsg('✗ ' + json.error, false);
+  }
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Sortierung + Filter ──
+let sortCol = null;   // 'name' | 'size'
+let sortAsc = true;
+
+function setSort(col) {
+  if (sortCol === col) { sortAsc = !sortAsc; }
+  else { sortCol = col; sortAsc = true; }
+  applyFilterSort();
+}
+
+function applyFilterSort() {
+  const q    = (document.getElementById('file-filter').value || '').toLowerCase();
+  const op   = document.getElementById('size-op').value;
+  const valMB = parseFloat(document.getElementById('size-val').value);
+  const valBytes = isNaN(valMB) ? null : valMB * 1_048_576;
+
+  const tbody = document.getElementById('file-table');
+  const pairs = [];
+  tbody.querySelectorAll('tr[data-name]').forEach(row => {
+    const panel = document.getElementById('lookup-' + row.id.replace('row-', ''));
+    pairs.push({ row, panel });
+  });
+
+  function sizeMatch(row) {
+    if (!op || valBytes === null) return true;
+    const s = parseFloat(row.dataset.size);
+    if (op === 'gte') return s >= valBytes;
+    if (op === 'lte') return s <= valBytes;
+    if (op === 'gt')  return s >  valBytes;
+    if (op === 'lt')  return s <  valBytes;
+    return true;
+  }
+
+  const filtered = pairs.filter(({ row }) =>
+    (!q || row.dataset.name.includes(q)) && sizeMatch(row)
+  );
+  const hidden = pairs.filter(({ row }) =>
+    !(!q || row.dataset.name.includes(q)) || !sizeMatch(row)
+  );
+
+  // Sort
+  if (sortCol) {
+    filtered.sort((a, b) => {
+      let va = sortCol === 'size' ? parseFloat(a.row.dataset.size) : a.row.dataset.name;
+      let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size) : b.row.dataset.name;
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }
+
+  // Re-order DOM
+  filtered.forEach(({ row, panel }) => {
+    tbody.appendChild(row);
+    if (panel) tbody.appendChild(panel);
+  });
+  hidden.forEach(({ row, panel }) => {
+    row.classList.add('hidden');
+    if (panel) panel.classList.add('hidden');
+  });
+  filtered.forEach(({ row, panel }) => {
+    row.classList.remove('hidden');
+  });
+
+  // Update sort icons
+  ['name', 'size'].forEach(c => {
+    const el = document.getElementById('sort-' + c + '-icon');
+    if (!el) return;
+    el.textContent = sortCol !== c ? '↕' : sortAsc ? '↑' : '↓';
+    el.className = sortCol === c ? 'text-purple-600' : 'text-gray-300 group-hover:text-gray-500';
+  });
+
+  // Counter + reset button
+  const total = pairs.length;
+  const shown = filtered.length;
+  const hasFilter = q || (op && valBytes !== null);
+  document.getElementById('filter-count').textContent =
+    hasFilter ? `${shown} von ${total}` : `${total} Dateien`;
+  document.getElementById('filter-clear').classList.toggle('hidden', !hasFilter);
+}
+
+function clearFilter() {
+  document.getElementById('file-filter').value = '';
+  document.getElementById('size-op').value = '';
+  document.getElementById('size-val').value = '';
+  applyFilterSort();
+}
+
+// Init counter on load
+document.addEventListener('DOMContentLoaded', () => applyFilterSort());
+
+function openPlayer(encodedName) {
+  const src = '/pre-check/video?name=' + encodedName;
+  document.getElementById('videoPlayerSrc').src = src;
+  document.getElementById('videoPlayer').load();
+  document.getElementById('videoModal').classList.remove('hidden');
+}
+
+function closePlayer() {
+  const v = document.getElementById('videoPlayer');
+  v.pause();
+  document.getElementById('videoPlayerSrc').src = '';
+  v.load();
+  document.getElementById('videoModal').classList.add('hidden');
+}
+</script>
+
+<!-- Video Player Modal -->
+<div id="videoModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+     onclick="if(event.target===this) closePlayer()">
+  <div class="bg-black rounded-lg shadow-2xl max-w-4xl w-full mx-4 overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 bg-gray-900">
+      <span class="text-gray-400 text-sm">Video-Vorschau</span>
+      <button onclick="closePlayer()" class="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <video id="videoPlayer" controls class="w-full max-h-[70vh] bg-black" preload="metadata">
+      <source id="videoPlayerSrc" src="">
+      Dein Browser unterstützt dieses Videoformat nicht.
+    </video>
+  </div>
+</div>
+
+{% endblock %}

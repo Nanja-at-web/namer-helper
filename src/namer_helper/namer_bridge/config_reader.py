@@ -27,3 +27,16 @@ def read_namer_paths(config_path: Path) -> dict[str, Path]:
         paths[key] = Path(raw.strip())
 
     return paths
+
+
+def read_namer_porndb_token(config_path: Path) -> str:
+    """Read porndb_token from namer.cfg — Namer's own TPDB credential."""
+    parser = configparser.ConfigParser()
+    parser.read(config_path, encoding="utf-8")
+    # namer.cfg has porndb_token in the [namer] section (or no section header)
+    for section in parser.sections():
+        val = parser.get(section, "porndb_token", fallback="")
+        if val.strip():
+            return val.strip()
+    # Also try DEFAULT (keys outside any section)
+    return parser.defaults().get("porndb_token", "").strip()

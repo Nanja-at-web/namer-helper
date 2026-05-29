@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %} — Einstellungen{% endblock %}
+
+{% block content %}
+
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Einstellungen</h1>
+
+<!-- StashDB -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-1">StashDB Fingerprint-Suche</h2>
+  <p class="text-sm text-gray-500 mb-4">
+    <a href="https://stashdb.org" target="_blank" class="text-indigo-600 hover:underline">StashDB</a>
+    ist eine Community-Datenbank für Szenen. Mit einem API-Schlüssel können Dateien
+    über ihre phash/oshash-Fingerprints gefunden werden — ohne den Dateinamen zu verwenden.
+    Der Schlüssel wird lokal in <code>/etc/namer-helper/ai_config.json</code> gespeichert (nur root lesbar).
+  </p>
+
+  <div class="grid grid-cols-1 gap-4 max-w-lg">
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">StashDB API-Schlüssel</label>
+      <input id="s-stashdb-key" type="password" value="{{ ai_cfg.stashdb_api_key }}"
+        placeholder="eyJ…"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <p class="text-xs text-gray-400 mt-1">
+        Unter <strong>stashdb.org → Profil → API-Schlüssel</strong> zu finden.
+        Ohne Schlüssel funktionieren nur öffentliche (nicht-authentifizierte) Abfragen.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ThePornDB -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-1">ThePornDB Gegencheck</h2>
+  <div class="bg-green-50 border border-green-200 rounded p-3 mb-4 text-sm text-green-800">
+    Token wird automatisch aus <code class="bg-green-100 px-1 rounded">namer.cfg</code> gelesen
+    (<code class="bg-green-100 px-1 rounded">porndb_token</code>) — kein separates Eintippen nötig.
+  </div>
+  <p class="text-sm text-gray-500 mb-4">
+    ThePornDB wird als <strong>Gegencheck</strong> genutzt: läuft erst nach StashDB und Ollama,
+    bestätigt oder widerspricht deren Ergebnis. Endpoint:
+    <code class="bg-gray-100 px-1 rounded text-xs">https://theporndb.net/graphql</code> (Stash-Box GraphQL).
+  </p>
+  <div class="grid grid-cols-1 gap-4 max-w-lg">
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">
+        Token-Override <span class="font-normal text-gray-400">(optional — leer lassen um namer.cfg zu verwenden)</span>
+      </label>
+      <input id="s-tpdb-key" type="password" value="{{ ai_cfg.theporndb_api_key }}"
+        placeholder="Leer = automatisch aus namer.cfg"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+  </div>
+</div>
+
+<!-- Ollama -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-1">Ollama Dateinamen-Analyse</h2>
+  <p class="text-sm text-gray-500 mb-4">
+    Ollama analysiert den Dateinamen lokal und schlägt bereinigte Suchtitel vor —
+    hilfreich wenn Dateinamen viele Tags, Hashtags oder technische Informationen enthalten.
+  </p>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Ollama URL</label>
+      <input id="s-ollama-url" type="text" value="{{ ai_cfg.ollama_url }}"
+        placeholder="http://localhost:11434"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Modell</label>
+      <input id="s-ollama-model" type="text" value="{{ ai_cfg.ollama_model }}"
+        placeholder="llama3"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+  </div>
+  <p class="text-xs text-gray-400 mt-2">
+    Empfohlen: <code>llama3</code> oder <code>mistral</code>. Ollama muss erreichbar sein, sonst wird die Analyse übersprungen.
+  </p>
+</div>
+
+<!-- Pre-Check -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-1">Pre-Check Verzeichnis</h2>
+  <p class="text-sm text-gray-500 mb-4">
+    Dateien die hier abgelegt werden können vor der Namer-Verarbeitung geprüft und
+    bereinigt werden. Namer greift auf dieses Verzeichnis <strong>nicht</strong> direkt zu —
+    erst nach "→ Watch/" startet die Verarbeitung.
+  </p>
+  <div class="max-w-lg">
+    <label class="block text-xs font-medium text-gray-500 mb-1">Verzeichnispfad</label>
+    <input id="s-pre-check-dir" type="text" value="{{ ai_cfg.pre_check_dir }}"
+      placeholder="/var/lib/namer/pre-check"
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+  </div>
+</div>
+
+<div id="msg" class="hidden mb-4 text-sm rounded p-3"></div>
+
+<button onclick="saveSettings()"
+  class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-5 py-2 rounded font-medium">
+  Einstellungen speichern
+</button>
+
+<script>
+async function saveSettings() {
+  const data = {
+    stashdb_api_key: document.getElementById('s-stashdb-key').value,
+    ollama_url:      document.getElementById('s-ollama-url').value.trim(),
+    ollama_model:    document.getElementById('s-ollama-model').value.trim(),
+    theporndb_api_key: document.getElementById('s-tpdb-key').value,
+    pre_check_dir:   document.getElementById('s-pre-check-dir').value.trim(),
+  };
+  const res = await fetch('/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  const el = document.getElementById('msg');
+  el.textContent = json.ok ? '✓ Einstellungen gespeichert.' : '✗ Fehler: ' + json.error;
+  el.className = 'mb-4 text-sm rounded p-3 ' + (json.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
+  el.classList.remove('hidden');
+}
+</script>
+
+{% endblock %}

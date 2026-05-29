@@ -37,7 +37,14 @@
 </div>
 
 <!-- Verzeichnis-Statistiken -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+  <a href="/pre-check" class="bg-white rounded-lg shadow p-4 hover:shadow-md transition block">
+    <div class="text-xs text-gray-400 uppercase tracking-wide mb-1">pre-check/</div>
+    <div class="text-3xl font-bold {% if pre_check_count > 0 %}text-purple-600{% else %}text-gray-700{% endif %}">
+      {{ pre_check_count }}
+    </div>
+    <div class="text-xs text-gray-400 mt-1 truncate">{{ pre_check_dir }}</div>
+  </a>
   {% for dir_name, info in stats.items() %}
   <a href="/files/{{ dir_name }}" class="bg-white rounded-lg shadow p-4 hover:shadow-md transition block">
     <div class="text-xs text-gray-400 uppercase tracking-wide mb-1">{{ dir_name }}/</div>
@@ -51,6 +58,29 @@
   </a>
   {% endfor %}
 </div>
+
+<!-- Wartung -->
+{% if stats.work and stats.work.count > 0 %}
+<div class="bg-amber-50 border border-amber-200 rounded-lg shadow p-5 mb-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-amber-800 mb-1">work/ nicht leer ({{ stats.work.count }} Dateien)</h2>
+      <p class="text-xs text-amber-600">namer-watchdog startet nicht solange work/ Dateien enthält. Dateien werden zurück nach watch/ verschoben.</p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="clearWork(false)"
+        class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm px-4 py-2 rounded font-medium">
+        → watch/ zurückschieben
+      </button>
+      <button onclick="clearWork(true)"
+        class="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded font-medium">
+        Zurückschieben &amp; Starten
+      </button>
+    </div>
+  </div>
+  <div id="clear-msg" class="hidden mt-2 text-sm text-amber-700"></div>
+</div>
+{% endif %}
 
 <!-- Report generieren -->
 <div class="bg-white rounded-lg shadow p-5 mb-6">
@@ -80,5 +110,22 @@
   </ul>
 </div>
 {% endif %}
+
+<script>
+async function clearWork(andStart) {
+  const msg = document.getElementById('clear-msg');
+  msg.textContent = 'Wird geleert…';
+  msg.classList.remove('hidden');
+  const res = await fetch('/work/clear', {method: 'POST'});
+  const json = await res.json();
+  if (!json.ok) { msg.textContent = '✗ Fehler: ' + json.error; return; }
+  msg.textContent = '✓ ' + json.deleted + ' Einträge gelöscht.';
+  if (andStart) {
+    await fetch('/service/start', {method: 'POST'});
+    msg.textContent += ' namer-watchdog gestartet.';
+  }
+  setTimeout(() => location.reload(), 1500);
+}
+</script>
 
 {% endblock %}

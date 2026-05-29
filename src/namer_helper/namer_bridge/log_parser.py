@@ -5,15 +5,19 @@ Parses namer failed-log files (.namer_failed.log) and watchdog logs.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
 
 
 _FAILED_LOG_SUFFIX = ".namer_failed.log"
 _MATCH_SCORE_RE = re.compile(r"match score[:\s]+([0-9.]+)", re.IGNORECASE)
 _SITE_RE = re.compile(r"site[:\s]+([^\n,]+)", re.IGNORECASE)
 _DATE_RE = re.compile(r"date[:\s]+(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
+# Matches: Calculated hashes: {'duration': 123, 'phash': 'abc...', 'oshash': 'def...'}
+_PHASH_RE = re.compile(r"['\"]?phash['\"]?\s*:\s*['\"]?([a-fA-F0-9]+)['\"]?")
+_OSHASH_RE = re.compile(r"['\"]?oshash['\"]?\s*:\s*['\"]?([a-fA-F0-9]+)['\"]?")
+_DURATION_RE = re.compile(r"['\"]?duration['\"]?\s*:\s*([0-9]+)")
 
 
 @dataclass
@@ -23,6 +27,9 @@ class FailedMatch:
     match_score: float | None = None
     site_hint: str | None = None
     date_hint: str | None = None
+    phash: str | None = None
+    oshash: str | None = None
+    duration: int | None = None
     raw_log: str = field(default="", repr=False)
 
 
@@ -42,6 +49,9 @@ def parse_failed_log(log_path: Path) -> FailedMatch:
     score_match = _MATCH_SCORE_RE.search(raw)
     site_match = _SITE_RE.search(raw)
     date_match = _DATE_RE.search(raw)
+    phash_match = _PHASH_RE.search(raw)
+    oshash_match = _OSHASH_RE.search(raw)
+    duration_match = _DURATION_RE.search(raw)
 
     return FailedMatch(
         file_path=media_path,
@@ -49,6 +59,9 @@ def parse_failed_log(log_path: Path) -> FailedMatch:
         match_score=float(score_match.group(1)) if score_match else None,
         site_hint=site_match.group(1).strip() if site_match else None,
         date_hint=date_match.group(1) if date_match else None,
+        phash=phash_match.group(1) if phash_match else None,
+        oshash=oshash_match.group(1) if oshash_match else None,
+        duration=int(duration_match.group(1)) if duration_match else None,
         raw_log=raw,
     )
 

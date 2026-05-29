@@ -28,14 +28,13 @@ _STRIP_RE = re.compile(
 )
 
 _PROMPT_TEMPLATE = """\
-You are a media file metadata assistant. Analyze the filename below and return ONLY a JSON object — no explanation, no markdown, just the JSON.
+You are a media file metadata assistant. Identify the scene title and return ONLY a JSON object — no explanation, no markdown, just the JSON.
 
 Filename: {filename}
-Cleaned hint: {cleaned}
-
+{context_block}
 Return exactly this structure:
 {{
-  "cleaned_name": "<readable title, no technical tags>",
+  "cleaned_name": "<Studio - Date - Title (Performers)>",
   "search_queries": ["<query 1>", "<query 2>", "<query 3>"],
   "confidence": <float 0.0-1.0>,
   "recommended_action": "<auto_rename|manual_review|skip>",
@@ -43,10 +42,12 @@ Return exactly this structure:
 }}
 
 Rules:
-- confidence >= 0.85 → auto_rename only if title is unambiguous
+- Use known performers/studio/date from context if provided — they are more reliable than the filename
+- cleaned_name should follow: Studio - YYYY-MM-DD - Title (Performer1, Performer2)
+- search_queries: use performer names + title variations to find the scene
+- confidence >= 0.85 only if title is clearly identifiable
 - confidence 0.50-0.84 → manual_review
 - confidence < 0.50 → skip
-- search_queries should vary: full title, title+studio, title+year
 """
 
 
@@ -94,10 +95,41 @@ def analyze_filename(
     filename: str,
     client: OllamaClient,
     model: str = "llama3",
+    performers: list[str] | None = None,
+    studio: str | None = None,
+    date: str | None = None,
+    duration: int | None = None,
+    logo_studio: str | None = None,
 ) -> OllamaResult:
-    """Analyze a single filename via Ollama. Never raises — errors land in result.error."""
+    """Analyze a filename via Ollama with all available context signals.
+
+    Passes performers/studio/date/duration so Ollama can build a meaningful
+    suggestion even when the filename itself is a tag list or garbage.
+    Never raises — errors land in result.error.
+    """
     cleaned = _clean_filename(filename)
-    prompt = _PROMPT_TEMPLATE.format(filename=filename, cleaned=cleaned)
+
+    # Build context block from all known signals
+    ctx_lines: list[str] = []
+    eff_studio = studio or logo_studio
+    if performers:
+        ctx_lines.append(f"Known performers: {', '.join(performers)}")
+    if eff_studio:
+        ctx_lines.append(f"Studio/site: {eff_studio}")
+    if date:
+        ctx_lines.append(f"Date: {date}")
+    if duration:
+        m, s = divmod(duration, 60)
+        ctx_lines.append(f"Duration: {m}:{s:02d} ({duration}s)")
+
+    context_block = ""
+    if ctx_lines:
+        context_block = "Known context (trust these over the filename):\n" + "\n".join(f"  {l}" for l in ctx_lines) + "\n\n"
+
+    prompt = _PROMPT_TEMPLATE.format(
+        filename=filename,
+        context_block=context_block,
+    )
 
     try:
         raw = client.generate(model=model, prompt=prompt)

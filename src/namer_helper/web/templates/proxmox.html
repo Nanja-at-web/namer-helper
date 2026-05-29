@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %} — Proxmox{% endblock %}
+
+{% block content %}
+
+<h1 class="text-2xl font-bold text-gray-800 mb-2">Proxmox SSH-Integration</h1>
+<p class="text-sm text-gray-500 mb-6">
+  namer-helper läuft im LXC-Container und kann NFS nicht direkt mounten.
+  Mit einer SSH-Verbindung zum Proxmox-Host werden die Mounts dort eingerichtet
+  und per Bind-Mount in den Container eingebunden.
+</p>
+
+<!-- SSH-Verbindung konfigurieren -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-4">SSH-Verbindung zum Proxmox-Host</h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Proxmox Host IP / Hostname</label>
+      <input id="c-host" type="text" value="{{ cfg.host }}" placeholder="192.168.1.x"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">SSH-Benutzer</label>
+      <input id="c-user" type="text" value="{{ cfg.user }}" placeholder="root"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">SSH-Port</label>
+      <input id="c-port" type="number" value="{{ cfg.port }}"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">LXC Container-ID</label>
+      <input id="c-lxc" type="text" value="{{ cfg.lxc_id }}" placeholder="103"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    </div>
+  </div>
+
+  <div class="mt-4 flex gap-3 items-center">
+    <button onclick="saveConfig()"
+      class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-5 py-2 rounded font-medium">
+      Speichern
+    </button>
+    <button onclick="testConnection()"
+      class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded">
+      Verbindung testen
+    </button>
+    <span id="test-result" class="text-sm"></span>
+  </div>
+</div>
+
+<!-- SSH Public Key -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-2">SSH-Schlüssel (einmalig einrichten)</h2>
+  <p class="text-sm text-gray-500 mb-3">
+    Diesen öffentlichen Schlüssel einmalig auf <strong>proxbox</strong> hinterlegen,
+    damit namer-helper sich ohne Passwort verbinden kann.
+  </p>
+
+  <div class="bg-gray-900 text-green-300 font-mono text-xs p-3 rounded mb-3 break-all select-all">
+    {{ pubkey if pubkey else "Kein Schlüssel vorhanden — wird beim ersten Start generiert." }}
+  </div>
+
+  {% if pubkey %}
+  <p class="text-xs text-gray-400 mb-1">Auf <strong>proxbox</strong> ausführen:</p>
+  <div class="bg-gray-100 font-mono text-xs p-3 rounded">
+    echo '{{ pubkey }}' >> /root/.ssh/authorized_keys
+  </div>
+  <p class="text-xs text-gray-400 mt-2">
+    Oder: <code>ssh-copy-id -i /etc/namer-helper/.ssh/id_ed25519.pub root@{{ cfg.host if cfg.host else "&lt;proxbox-ip&gt;" }}</code>
+    (von einem anderen Rechner ausführen)
+  </p>
+  {% endif %}
+</div>
+
+<!-- NFS-Mounts via Host einrichten -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="font-semibold text-gray-700 mb-1">NFS-Mounts über Proxmox-Host einrichten</h2>
+  <p class="text-sm text-gray-500 mb-4">
+    Für jeden NFS-Mount aus der <a href="/mounts" class="text-indigo-600 hover:underline">Mounts-Konfiguration</a>
+    kann namer-helper den Mount auf dem Proxmox-Host einrichten und per Bind-Mount in den Container einbinden.
+    Danach ist ein Container-Neustart erforderlich.
+  </p>
+
+  {% if nfs_mounts %}
+  <div class="divide-y divide-gray-100">
+    {% for m in nfs_mounts %}
+    <div class="py-3 flex items-center justify-between gap-4">
+      <div>
+        <div class="font-medium text-sm text-gray-800">{{ m.label if m.label else "NFS" }}</div>
+        <div class="font-mono text-xs text-gray-500">{{ m.host }}:{{ m.share }} → {{ m.target }}</div>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button onclick="doHostMount('{{ m.id }}')"
+          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1.5 rounded font-medium">
+          Auf Host mounten
+        </button>
+        <button onclick="doHostUnmount('{{ m.id }}')"
+          class="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-xs px-3 py-1.5 rounded">
+          Rückgängig
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-blue-50 border border-blue-200 rounded p-3 text-blue-700 text-sm">
+    Keine NFS-Mounts konfiguriert.
+    <a href="/mounts" class="underline">Zuerst unter Mounts einen NFS-Eintrag anlegen.</a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Container neu starten -->
+<div class="bg-white rounded-lg shadow p-6">
+  <h2 class="font-semibold text-gray-700 mb-1">Container neu starten</h2>
+  <p class="text-sm text-gray-500 mb-4">
+    Nach dem Einrichten eines Host-Mounts muss der LXC-Container neu gestartet werden,
+    damit der Bind-Mount aktiv wird. <strong>Das WebUI ist kurz nicht erreichbar.</strong>
+  </p>
+  <button onclick="doRestart()"
+    class="bg-red-100 hover:bg-red-200 text-red-700 text-sm px-5 py-2 rounded font-medium">
+    Container {{ cfg.lxc_id }} neu starten
+  </button>
+  <span id="restart-msg" class="ml-3 text-sm text-gray-500"></span>
+</div>
+
+<!-- Ausgabe-Log -->
+<div id="output-box" class="hidden mt-6 bg-gray-900 text-gray-200 font-mono text-xs leading-6 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap">
+</div>
+
+<script>
+function getCfg() {
+  return {
+    host:   document.getElementById('c-host').value.trim(),
+    user:   document.getElementById('c-user').value.trim() || 'root',
+    port:   parseInt(document.getElementById('c-port').value) || 22,
+    lxc_id: document.getElementById('c-lxc').value.trim() || '103',
+  };
+}
+
+async function saveConfig() {
+  const res = await fetch('/proxmox/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getCfg()),
+  });
+  const json = await res.json();
+  if (json.ok) {
+    location.reload();
+  } else {
+    showOutput('Fehler: ' + json.error, false);
+  }
+}
+
+async function testConnection() {
+  const el = document.getElementById('test-result');
+  el.textContent = 'Teste…';
+  el.className = 'text-sm text-gray-400';
+  const res = await fetch('/proxmox/test', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getCfg()),
+  });
+  const json = await res.json();
+  if (json.ok) {
+    el.textContent = '✓ Verbunden — ' + json.output;
+    el.className = 'text-sm text-green-600';
+  } else {
+    el.textContent = '✗ Fehler: ' + json.output;
+    el.className = 'text-sm text-red-600';
+  }
+}
+
+function showOutput(text, ok) {
+  const box = document.getElementById('output-box');
+  box.classList.remove('hidden');
+  box.textContent = text;
+  box.className = 'mt-6 font-mono text-xs leading-6 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap ' +
+    (ok ? 'bg-gray-900 text-gray-200' : 'bg-red-950 text-red-200');
+  box.scrollIntoView({behavior: 'smooth'});
+}
+
+function stepsToText(steps) {
+  return steps.map(s => {
+    const icon = s.ok ? '✓' : '✗';
+    return `${icon} ${s.desc}\n${s.out ? '  ' + s.out.split('\n').join('\n  ') : ''}`;
+  }).join('\n\n');
+}
+
+async function doHostMount(id) {
+  showOutput('Wird ausgeführt…', true);
+  const res = await fetch('/proxmox/host-mount?mount_id=' + id, {method: 'POST'});
+  const json = await res.json();
+  if (json.steps) {
+    const allOk = json.steps.every(s => s.ok);
+    showOutput(stepsToText(json.steps) + '\n\n' +
+      (allOk ? '✓ Fertig! Container neu starten um Bind-Mount zu aktivieren.' :
+                '✗ Ein Schritt ist fehlgeschlagen. Bitte Ausgabe prüfen.'), allOk);
+  } else {
+    showOutput('Fehler: ' + json.error, false);
+  }
+}
+
+async function doHostUnmount(id) {
+  if (!confirm('Host-Mount und LXC Bind-Mount entfernen?')) return;
+  showOutput('Wird ausgeführt…', true);
+  const res = await fetch('/proxmox/host-unmount?mount_id=' + id, {method: 'POST'});
+  const json = await res.json();
+  if (json.steps) {
+    const allOk = json.steps.every(s => s.ok);
+    showOutput(stepsToText(json.steps) + '\n\n' +
+      (allOk ? '✓ Fertig! Container neu starten um Änderung zu aktivieren.' :
+                '✗ Ein Schritt ist fehlgeschlagen.'), allOk);
+  } else {
+    showOutput('Fehler: ' + json.error, false);
+  }
+}
+
+async function doRestart() {
+  if (!confirm('Container jetzt neu starten? Das WebUI ist kurz nicht erreichbar.')) return;
+  const msg = document.getElementById('restart-msg');
+  msg.textContent = 'Neustart wird ausgelöst…';
+  await fetch('/proxmox/restart', {method: 'POST'}).catch(() => {});
+  msg.textContent = 'Neustart ausgelöst. Seite neu laden in 15 s…';
+  setTimeout(() => location.reload(), 15000);
+}
+</script>
+
+{% endblock %}

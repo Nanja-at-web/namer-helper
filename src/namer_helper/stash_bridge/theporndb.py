@@ -1,0 +1,358 @@
+"""
+ThePornDB scene lookup via Stash-Box GraphQL endpoint.
+
+Two lookup strategies:
+1. Fingerprint (oshash/phash) — definitive match, low coverage
+2. Title + context search — uses performers/studio to score and rank results
+
+Endpoint: https://theporndb.net/graphql (Stash-Box compatible)
+Token: read automatically from namer.cfg porndb_token
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import requests
+
+
+THEPORNDB_GRAPHQL_URL = "https://theporndb.net/graphql"
+
+_STOP_WORDS = {"a", "an", "the", "and", "in", "of", "to", "my", "her", "his", "on", "at", "is", "with"}
+
+_FINGERPRINT_QUERY = """
+query FindScenesByFingerprints($fingerprints: [[FingerprintQueryInput!]!]!) {
+  findScenesBySceneFingerprints(fingerprints: $fingerprints) {
+    id title date
+    images { url }
+    studio { name parent { name } }
+    performers { performer { name } }
+  }
+}
+"""
+
+_SEARCH_QUERY = """
+query SearchScene($term: String!) {
+  searchScene(term: $term) {
+    id title date duration
+    images { url }
+    studio { name parent { name } }
+    performers { performer { name } }
+  }
+}
+"""
+
+_PERFORMER_SEARCH_QUERY = """
+query SearchPerformer($term: String!) {
+  searchPerformer(term: $term) {
+    id
+    name
+    aliases
+  }
+}
+"""
+
+
+@dataclass
+class ThePornDBScene:
+    id: str
+    title: str
+    date: str | None
+    site: str | None
+    network: str | None
+    performers: list[str] = field(default_factory=list)
+    url: str = ""
+    image: str = ""
+    match_method: str = "hash"
+    score: int = 0
+    score_breakdown: dict = field(default_factory=dict)
+    duration: int | None = None
+
+
+@dataclass
+class ThePornDBResult:
+    scenes: list[ThePornDBScene] = field(default_factory=list)
+    error: str | None = None
+    match_method: str = "hash"
+
+    @property
+    def found(self) -> bool:
+        return bool(self.scenes)
+
+    @property
+    def best(self) -> ThePornDBScene | None:
+        return self.scenes[0] if self.scenes else None
+
+
+def _score_scene(
+    scene: ThePornDBScene,
+    title: str,
+    performers: list[str],
+    studio: str | None,
+    date: str | None,
+    duration: int | None = None,
+) -> tuple[int, dict]:
+    """Score a TPDB scene against known context. Returns (total, breakdown)."""
+    breakdown: dict[str, int] = {}
+
+    # Title word overlap
+    title_words = set(title.lower().split()) - _STOP_WORDS
+    scene_words = set(scene.title.lower().split()) - _STOP_WORDS
+    overlap = len(title_words & scene_words)
+    if overlap:
+        breakdown["Titel"] = overlap * 10
+
+    # Performer match
+    scene_perfs_lower = [p.lower() for p in scene.performers]
+    perf_pts = 0
+    matched_perfs = []
+    for p in performers:
+        p_lower = p.lower().strip()
+        if not p_lower:
+            continue
+        for sp in scene_perfs_lower:
+            if p_lower in sp or sp in p_lower:
+                perf_pts += 25
+                matched_perfs.append(p.split()[0])  # first name only for display
+                break
+    if perf_pts:
+        breakdown[f"Performer ({', '.join(matched_perfs)})"] = perf_pts
+
+    # Studio / site match
+    studio_pts = 0
+    if studio and scene.site:
+        s1, s2 = studio.lower(), scene.site.lower()
+        if s1 in s2 or s2 in s1:
+            studio_pts += 15
+    if studio and scene.network:
+        s1, n = studio.lower(), scene.network.lower()
+        if s1 in n or n in s1:
+            studio_pts += 8
+    if studio_pts:
+        breakdown["Studio"] = studio_pts
+
+    # Date match
+    date_pts = 0
+    if date and scene.date:
+        if date[:4] == scene.date[:4]:
+            date_pts += 10
+        if date == scene.date:
+            date_pts += 10
+    if date_pts:
+        breakdown["Datum"] = date_pts
+
+    # Duration match
+    dur_pts = 0
+    dur_label = ""
+    if duration and scene.duration:
+        diff = abs(duration - scene.duration)
+        if diff <= 10:
+            dur_pts, dur_label = 40, f"Dauer ±{diff}s"
+        elif diff <= 60:
+            dur_pts, dur_label = 20, f"Dauer ±{diff}s"
+        elif diff <= 300:
+            dur_pts, dur_label = 5, f"Dauer ±{diff}s"
+    if dur_pts:
+        breakdown[dur_label] = dur_pts
+
+    total = sum(breakdown.values())
+    return total, breakdown
+
+
+class ThePornDBClient:
+    def __init__(self, api_key: str = "", timeout: int = 15) -> None:
+        self._headers = {"Content-Type": "application/json"}
+        if api_key:
+            self._headers["ApiKey"] = api_key
+        self._api_key = api_key
+        self._timeout = timeout
+
+    def _post(self, query: str, variables: dict) -> tuple[dict | None, str | None]:
+        if not self._api_key:
+            return None, "ThePornDB API-Token fehlt"
+        try:
+            r = requests.post(
+                THEPORNDB_GRAPHQL_URL,
+                json={"query": query, "variables": variables},
+                headers=self._headers,
+                timeout=self._timeout,
+            )
+            if r.status_code == 401:
+                return None, "ThePornDB: API-Token ungültig"
+            if r.status_code == 403:
+                return None, "ThePornDB: Zugriff verweigert"
+            r.raise_for_status()
+        except requests.RequestException as exc:
+            return None, str(exc)
+        body = r.json()
+        if "errors" in body:
+            return None, "; ".join(e.get("message", str(e)) for e in body["errors"])
+        return body, None
+
+    def _parse_scenes(self, raw: list, method: str) -> list[ThePornDBScene]:
+        scenes = []
+        for s in raw:
+            scene_id = s.get("id", "")
+            studio_obj = s.get("studio") or {}
+            parent_obj = studio_obj.get("parent") or {}
+            performers = [
+                p.get("performer", {}).get("name", "")
+                for p in s.get("performers", [])
+                if p.get("performer", {}).get("name")
+            ]
+            raw_dur = s.get("duration")
+            duration = int(raw_dur) if raw_dur else None
+            images = s.get("images") or []
+            image = images[0].get("url", "") if images else ""
+            scenes.append(ThePornDBScene(
+                id=scene_id,
+                title=s.get("title") or "",
+                date=s.get("date"),
+                site=studio_obj.get("name"),
+                network=parent_obj.get("name"),
+                performers=performers,
+                url=f"https://theporndb.net/scenes/{scene_id}" if scene_id else "",
+                image=image,
+                match_method=method,
+                duration=duration,
+            ))
+        return scenes
+
+    def query_by_fingerprints(
+        self, *, oshash: str | None = None, phash: str | None = None
+    ) -> ThePornDBResult:
+        """Hash-based fingerprint lookup — definitive but low coverage."""
+        fps = []
+        if oshash:
+            fps.append({"hash": oshash, "algorithm": "OSHASH"})
+        if phash:
+            fps.append({"hash": phash, "algorithm": "PHASH"})
+        if not fps:
+            return ThePornDBResult(error="Kein Hash verfügbar")
+        body, err = self._post(_FINGERPRINT_QUERY, {"fingerprints": [fps]})
+        if err:
+            return ThePornDBResult(error=err)
+        raw = (body.get("data") or {}).get("findScenesBySceneFingerprints") or []
+        flat = [s for fs in raw for s in (fs or [])]
+        return ThePornDBResult(scenes=self._parse_scenes(flat, "hash"), match_method="hash")
+
+    def search_by_context(
+        self,
+        title: str,
+        performers: list[str] | None = None,
+        studio: str | None = None,
+        date: str | None = None,
+        duration: int | None = None,
+        min_score: int = 20,
+    ) -> ThePornDBResult:
+        """Title search with performer/studio/date scoring and filtering.
+
+        Builds an enriched search term from title + performers, then scores
+        all candidates. Only scenes above min_score are returned, sorted best-first.
+        """
+        if not title.strip():
+            return ThePornDBResult(error="Kein Suchtitel verfügbar")
+
+        performers = performers or []
+
+        # Build enriched search term: title + up to 2 performer names
+        term_parts = [title.strip()]
+        for p in performers[:2]:
+            if p.strip():
+                term_parts.append(p.strip())
+        term = " ".join(term_parts)
+
+        body, err = self._post(_SEARCH_QUERY, {"term": term})
+        if err:
+            return ThePornDBResult(error=err)
+
+        raw = (body.get("data") or {}).get("searchScene") or []
+        candidates = self._parse_scenes(raw, "title")
+
+        # Score and filter
+        for scene in candidates:
+            scene.score, scene.score_breakdown = _score_scene(scene, title, performers, studio, date, duration)
+
+        scored = [s for s in candidates if s.score >= min_score]
+        scored.sort(key=lambda s: s.score, reverse=True)
+
+        # If nothing passes threshold, return top-3 unfiltered so user can decide
+        if not scored and candidates:
+            candidates.sort(key=lambda s: s.score, reverse=True)
+            return ThePornDBResult(scenes=candidates[:3], match_method="title")
+
+        return ThePornDBResult(scenes=scored[:3], match_method="title")
+
+    def search_by_performer(
+        self,
+        performers: list[str],
+        studio: str | None = None,
+        date: str | None = None,
+        duration: int | None = None,
+        min_score: int = 20,
+    ) -> ThePornDBResult:
+        """Search scenes using performer names as the primary signal.
+
+        Builds targeted search terms combining each performer with date/studio,
+        deduplicates candidates across all queries, scores and returns best matches.
+        """
+        if not performers:
+            return ThePornDBResult(error="Keine Performer angegeben")
+
+        # Build search terms — combined multi-performer first (most specific)
+        terms: list[str] = []
+        clean = [p.strip() for p in performers[:3] if p.strip()]
+        if len(clean) >= 2:
+            combined = " ".join(clean[:2])
+            terms.append(combined)
+            if date and len(date) >= 4:
+                terms.append(f"{combined} {date[:4]}")
+            if studio:
+                terms.append(f"{combined} {studio}")
+        for p in clean[:2]:
+            terms.append(p)
+            if date and len(date) >= 4:
+                terms.append(f"{p} {date[:4]}")
+            if studio:
+                terms.append(f"{p} {studio}")
+
+        seen_ids: set[str] = set()
+        all_candidates: list[ThePornDBScene] = []
+
+        for term in terms:
+            body, err = self._post(_SEARCH_QUERY, {"term": term})
+            if err or not body:
+                continue
+            raw = (body.get("data") or {}).get("searchScene") or []
+            for scene in self._parse_scenes(raw, "performer"):
+                if scene.id not in seen_ids:
+                    seen_ids.add(scene.id)
+                    all_candidates.append(scene)
+
+        if not all_candidates:
+            return ThePornDBResult(error="Keine Treffer via Performer-Suche")
+
+        # Score all candidates with full context
+        for scene in all_candidates:
+            # Use first performer name as title hint (often in scene title)
+            title_hint = performers[0] if performers else ""
+            scene.score, scene.score_breakdown = _score_scene(
+                scene, title_hint, performers, studio, date, duration
+            )
+
+        scored = [s for s in all_candidates if s.score >= min_score]
+        scored.sort(key=lambda s: s.score, reverse=True)
+
+        if not scored and all_candidates:
+            all_candidates.sort(key=lambda s: s.score, reverse=True)
+            return ThePornDBResult(scenes=all_candidates[:3], match_method="performer")
+
+        return ThePornDBResult(scenes=scored[:3], match_method="performer")
+
+    def query_by_hash(self, oshash: str) -> ThePornDBResult:
+        """Compat alias."""
+        return self.query_by_fingerprints(oshash=oshash)
+
+    def search_by_title(self, title: str) -> ThePornDBResult:
+        """Compat alias — no context scoring."""
+        return self.search_by_context(title)
