@@ -129,14 +129,14 @@
     </thead>
     <tbody class="divide-y divide-gray-100" id="file-table">
       {% for f in files %}
-      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds }}">
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="" data-duration-loaded="0" data-encoded="{{ f.name_encoded }}">
         <td class="px-4 py-3">
           <input type="checkbox" class="file-cb rounded border-gray-300"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
         </td>
         <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">{{ f.name }}</td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
-        <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap font-mono">{{ f.duration_hms }}</td>
+        <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap font-mono" id="duration-{{ loop.index }}">…</td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
           <button
             onclick="openPlayer('{{ f.name_encoded }}')"
@@ -752,7 +752,9 @@ function applyFilterSort() {
 
   function durationMatch(row) {
     if (!durationOp || durationVal === null) return true;
+    if (row.dataset.durationLoaded !== '1') return false;
     const d = parseFloat(row.dataset.duration || '0');
+    if (Number.isNaN(d) || d <= 0) return false;
     if (durationOp === 'gte') return d >= durationVal;
     if (durationOp === 'lte') return d <= durationVal;
     if (durationOp === 'gt')  return d >  durationVal;
@@ -773,6 +775,10 @@ function applyFilterSort() {
       let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size)
         : sortCol === 'duration' ? parseFloat(b.row.dataset.duration || '0')
         : b.row.dataset.name;
+      if (sortCol === 'duration') {
+        va = a.row.dataset.durationLoaded === '1' ? va : Number.POSITIVE_INFINITY;
+        vb = b.row.dataset.durationLoaded === '1' ? vb : Number.POSITIVE_INFINITY;
+      }
       if (va < vb) return sortAsc ? -1 : 1;
       if (va > vb) return sortAsc ? 1 : -1;
       return 0;
@@ -818,8 +824,31 @@ function clearFilter() {
   applyFilterSort();
 }
 
+async function loadDurations() {
+  const rows = Array.from(document.querySelectorAll('#file-table tr[data-encoded]'));
+  for (const row of rows) {
+    const idx = row.id.replace('row-', '');
+    const cell = document.getElementById('duration-' + idx);
+    try {
+      const res = await fetch('/pre-check/duration?name=' + row.dataset.encoded);
+      const data = await res.json();
+      row.dataset.duration = String(data.duration_seconds || 0);
+      row.dataset.durationLoaded = data.ok ? '1' : '0';
+      if (cell) cell.textContent = data.duration_hms || '—';
+    } catch (e) {
+      row.dataset.duration = '0';
+      row.dataset.durationLoaded = '0';
+      if (cell) cell.textContent = '—';
+    }
+    applyFilterSort();
+  }
+}
+
 // Init counter on load
-document.addEventListener('DOMContentLoaded', () => applyFilterSort());
+document.addEventListener('DOMContentLoaded', () => {
+  applyFilterSort();
+  loadDurations();
+});
 
 function openPlayer(encodedName) {
   const src = '/pre-check/video?name=' + encodedName;

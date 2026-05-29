@@ -633,8 +633,6 @@ def create_app(
     def _list_pre_check_files(pre_dir: Path) -> list[dict]:
         if not pre_dir.exists():
             return []
-        from namer_helper.namer_bridge.hasher import get_video_info
-
         items = []
         for f in sorted(pre_dir.rglob("*")):
             if not f.is_file():
@@ -649,17 +647,11 @@ def create_app(
             except OSError:
                 size_bytes = 0
                 size_mb = 0
-            try:
-                duration_seconds = int(get_video_info(f).get("duration") or 0)
-            except Exception:
-                duration_seconds = 0
             items.append({
                 "name": f.name,
                 "name_encoded": quote(f.name),
                 "size_mb": size_mb,
                 "size_bytes": size_bytes,
-                "duration_seconds": duration_seconds,
-                "duration_hms": _format_duration(duration_seconds),
             })
         return items
 
@@ -685,6 +677,24 @@ def create_app(
             "dir_exists": pre_dir.exists(),
             "pre_check_dir": str(pre_dir),
         })
+
+
+    @app.get("/pre-check/duration")
+    async def pre_check_duration(name: str):
+        ai_cfg = load_ai_config(helper_config_dir)
+        pre_dir = Path(ai_cfg.pre_check_dir)
+        video_path = _safe_path(pre_dir, name)
+        if video_path is None or not video_path.exists():
+            return {"ok": False, "error": "Datei nicht gefunden", "duration_seconds": 0, "duration_hms": "—"}
+        try:
+            from namer_helper.namer_bridge.hasher import get_video_info
+
+            loop = asyncio.get_running_loop()
+            info = await loop.run_in_executor(None, get_video_info, video_path)
+            seconds = int(info.get("duration") or 0)
+            return {"ok": True, "duration_seconds": seconds, "duration_hms": _format_duration(seconds)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "duration_seconds": 0, "duration_hms": "—"}
 
     @app.post("/pre-check/create-dir")
     async def pre_check_create_dir():
