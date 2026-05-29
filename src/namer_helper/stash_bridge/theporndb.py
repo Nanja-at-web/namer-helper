@@ -141,17 +141,21 @@ def _score_scene(
     if date_pts:
         breakdown["Datum"] = date_pts
 
-    # Duration match
+    # Duration match / mismatch. A large mismatch is a strong negative signal:
+    # a full movie must not be accepted as a short scene just because names overlap.
     dur_pts = 0
     dur_label = ""
     if duration and scene.duration:
         diff = abs(duration - scene.duration)
+        tolerance = max(600, int(min(duration, scene.duration) * 0.35))
         if diff <= 10:
             dur_pts, dur_label = 40, f"Dauer ±{diff}s"
         elif diff <= 60:
             dur_pts, dur_label = 20, f"Dauer ±{diff}s"
-        elif diff <= 300:
+        elif diff <= tolerance:
             dur_pts, dur_label = 5, f"Dauer ±{diff}s"
+        else:
+            dur_pts, dur_label = -60, "Dauer-Konflikt"
     if dur_pts:
         breakdown[dur_label] = dur_pts
 

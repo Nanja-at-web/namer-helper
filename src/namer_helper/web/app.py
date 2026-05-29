@@ -991,6 +991,7 @@ def create_app(
                             "match_method": s.match_method,
                             "score": s.score,
                             "score_breakdown": s.score_breakdown,
+                            "duration": s.duration,
                         }
                         for s in tpdb_result.scenes
                     ]
@@ -1050,6 +1051,7 @@ def create_app(
                 ollama=ollama_result,
                 filename_parsed=filename_parsed,
                 dest_duplicate=dest_duplicate,
+                local_duration=hashes.get("duration"),
             )
             result = {
                 "ok": True,

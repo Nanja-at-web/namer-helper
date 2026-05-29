@@ -221,9 +221,11 @@ class StashDBClient:
             pts = 0
             if duration and sc.duration:
                 diff = abs(duration - sc.duration)
+                tolerance = max(600, int(min(duration, sc.duration) * 0.35))
                 if diff <= 10:   pts += 40
                 elif diff <= 60: pts += 20
-                elif diff <= 300: pts += 5
+                elif diff <= tolerance: pts += 5
+                else: pts -= 60
             if studio and sc.studio:
                 if studio.lower() in sc.studio.lower() or sc.studio.lower() in studio.lower():
                     pts += 15
@@ -238,7 +240,7 @@ class StashDBClient:
 
         candidates.sort(key=_score, reverse=True)
         scored = [s for s in candidates if _score(s) >= min_score]
-        return StashDBResult(scenes=(scored or candidates)[:3])
+        return StashDBResult(scenes=scored[:3] if scored else [], error=None if scored else "Keine ausreichend plausiblen StashDB-Treffer")
 
     def search_by_performer(
         self,
@@ -324,9 +326,11 @@ class StashDBClient:
             pts = 0
             if duration and s.duration:
                 diff = abs(duration - s.duration)
+                tolerance = max(600, int(min(duration, s.duration) * 0.35))
                 if diff <= 10:   pts += 40
                 elif diff <= 60: pts += 20
-                elif diff <= 300: pts += 5
+                elif diff <= tolerance: pts += 5
+                else: pts -= 60
             if studio and s.studio:
                 if studio.lower() in s.studio.lower() or s.studio.lower() in studio.lower():
                     pts += 15
@@ -346,7 +350,7 @@ class StashDBClient:
         all_scenes.sort(key=_score, reverse=True)
         # Return top-3 with score ≥ 5 (at least something matched) or all if nothing scored
         scored = [s for s in all_scenes if _score(s) >= 5]
-        return StashDBResult(scenes=(scored or all_scenes)[:3])
+        return StashDBResult(scenes=scored[:3] if scored else [], error=None if scored else "Keine ausreichend plausiblen StashDB-Performer-Treffer")
 
     def submit_fingerprint(
         self,

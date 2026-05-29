@@ -71,3 +71,39 @@ def test_identification_keeps_ollama_only_as_review():
     assert result["status"] == "possible"
     assert result["action"] == "review"
     assert result["confidence"] < 0.7
+
+
+
+def test_identification_rejects_cross_confirmed_duration_mismatch():
+    result = build_identification(
+        original_name="movie_001.mp4",
+        stashdb_scenes=[{
+            "title": "Shared Movie Title",
+            "date": "2024-01-02",
+            "studio": "Studio A",
+            "performers": ["Performer A", "Performer B"],
+            "duration": 1306,
+            "match_via": "context",
+        }],
+        stashdb_suggested="Studio A - 2024-01-02 - Shared Movie Title.mp4",
+        tpdb_scenes=[{
+            "title": "Shared Movie Title",
+            "date": "2024-01-02",
+            "site": "Different Studio",
+            "performers": ["Performer A", "Performer B"],
+            "duration": 1306,
+            "score": 80,
+            "match_method": "title",
+        }],
+        tpdb_suggested="Different Studio - 2024-01-02 - Shared Movie Title.mp4",
+        ollama=None,
+        filename_parsed={"performers": ["Performer A", "Performer B"]},
+        dest_duplicate=None,
+        local_duration=9106,
+    )
+
+    assert result["status"] == "possible"
+    assert result["action"] == "review"
+    assert result["confidence"] <= 0.35
+    assert result["suggested_name"] is None
+    assert any("Dauerkonflikt" in signal for signal in result["signals"])

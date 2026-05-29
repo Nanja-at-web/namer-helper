@@ -72,10 +72,41 @@ def _with_ext(name: str | None, ext: str) -> str | None:
     return name + ext
 
 
-def _cross_confirm(stash_scene: dict | None, tpdb_scene: dict | None, parsed: dict | None) -> tuple[bool, list[str]]:
+def _duration_conflict(local_duration: int | None, scene_duration: int | None) -> tuple[bool, str | None]:
+    if not local_duration or not scene_duration:
+        return False, None
+    diff = abs(local_duration - scene_duration)
+    tolerance = max(600, int(min(local_duration, scene_duration) * 0.35))
+    if diff <= tolerance:
+        return False, f"Dauer plausibel ±{diff}s"
+    local_min = round(local_duration / 60)
+    scene_min = round(scene_duration / 60)
+    return True, f"Dauerkonflikt: lokal {local_min} min, Treffer {scene_min} min"
+
+
+def _scene_duration(scene: dict | None) -> int | None:
+    if not scene:
+        return None
+    value = scene.get("duration")
+    try:
+        return int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _cross_confirm(
+    stash_scene: dict | None,
+    tpdb_scene: dict | None,
+    parsed: dict | None,
+    local_duration: int | None,
+) -> tuple[bool, list[str], bool]:
     signals: list[str] = []
     if not stash_scene or not tpdb_scene:
-        return False, signals
+        return False, signals, False
+
+    duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(tpdb_scene) or _scene_duration(stash_scene))
+    if duration_signal:
+        signals.append(duration_signal)
 
     title_overlap = _words(stash_scene.get("title")) & _words(tpdb_scene.get("title"))
     if len(title_overlap) >= 2:
@@ -93,7 +124,7 @@ def _cross_confirm(stash_scene: dict | None, tpdb_scene: dict | None, parsed: di
     if stash_scene.get("date") and stash_scene.get("date") == tpdb_scene.get("date"):
         signals.append("Datum bestätigt")
 
-    return bool(signals), signals
+    return bool(signals) and not duration_conflict, signals, duration_conflict
 
 
 def build_identification(
@@ -106,6 +137,7 @@ def build_identification(
     ollama: dict | None,
     filename_parsed: dict | None,
     dest_duplicate: str | None,
+    local_duration: int | None = None,
 ) -> dict:
     ext = Path(original_name).suffix
     signals: list[str] = []
@@ -146,7 +178,18 @@ def build_identification(
             signals=["Fingerprint-Treffer"],
         ).to_dict()
 
-    confirmed, confirm_signals = _cross_confirm(sdb, tpdb, filename_parsed)
+    confirmed, confirm_signals, cross_duration_conflict = _cross_confirm(sdb, tpdb, filename_parsed, local_duration)
+    if cross_duration_conflict:
+        return Identification(
+            status="possible",
+            confidence=0.35,
+            source="Konfliktprüfung",
+            reason="Dauer passt nicht zum Datenbanktreffer; kein eindeutiger Match",
+            suggested_name=None,
+            action="review",
+            signals=confirm_signals,
+        ).to_dict()
+
     if confirmed and tpdb:
         signals.extend(confirm_signals)
         score = int(tpdb.get("score") or 0)
@@ -162,6 +205,17 @@ def build_identification(
         ).to_dict()
 
     if tpdb:
+        duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(tpdb))
+        if duration_conflict:
+            return Identification(
+                status="possible",
+                confidence=0.35,
+                source="ThePornDB Kontextsuche",
+                reason="Dauer passt nicht zum Datenbanktreffer; kein eindeutiger Match",
+                suggested_name=None,
+                action="review",
+                signals=[duration_signal or "Dauerkonflikt"],
+            ).to_dict()
         score = int(tpdb.get("score") or 0)
         if score >= 80:
             status, confidence, action = "identified", 0.88, "rename"
@@ -180,6 +234,17 @@ def build_identification(
         ).to_dict()
 
     if sdb:
+        duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(sdb))
+        if duration_conflict:
+            return Identification(
+                status="possible",
+                confidence=0.32,
+                source="StashDB Kontextsuche",
+                reason="Dauer passt nicht zum StashDB-Treffer; kein eindeutiger Match",
+                suggested_name=None,
+                action="review",
+                signals=[duration_signal or "Dauerkonflikt"],
+            ).to_dict()
         via = sdb.get("match_via") or "context"
         confidence = 0.78 if via == "context" else 0.64
         return Identification(
