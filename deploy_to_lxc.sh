@@ -24,19 +24,12 @@ push() {
 }
 
 # ── Python modules ────────────────────────────────────────────────────────────
-push "$SRC/namer_bridge/config_reader.py"     "$SITE/namer_bridge/config_reader.py"
-push "$SRC/namer_bridge/filename_parser.py"   "$SITE/namer_bridge/filename_parser.py"
-push "$SRC/namer_bridge/hasher.py"            "$SITE/namer_bridge/hasher.py"
-push "$SRC/namer_bridge/log_parser.py"        "$SITE/namer_bridge/log_parser.py"
-push "$SRC/ollama_bridge/analyzer.py"         "$SITE/ollama_bridge/analyzer.py"
-push "$SRC/ollama_bridge/client.py"           "$SITE/ollama_bridge/client.py"
-push "$SRC/stash_bridge/stashdb.py"           "$SITE/stash_bridge/stashdb.py"
-push "$SRC/stash_bridge/theporndb.py"         "$SITE/stash_bridge/theporndb.py"
-push "$SRC/web/ai_config.py"                  "$SITE/web/ai_config.py"
-push "$SRC/web/app.py"                        "$SITE/web/app.py"
-push "$SRC/web/identification.py"             "$SITE/web/identification.py"
-push "$SRC/web/lookup_cache.py"               "$SITE/web/lookup_cache.py"
-push "$SRC/web/proxmox.py"                    "$SITE/web/proxmox.py"
+# Keep the installed package in sync with the source tree. A fixed file list is
+# easy to forget when adding helper modules.
+while IFS= read -r -d '' py_file; do
+  rel="${py_file#$SRC/}"
+  push "$py_file" "$SITE/$rel"
+done < <(find "$SRC" -type f -name "*.py" -not -path "*/__pycache__/*" -print0)
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 push "$SRC/web/templates/base.html"             "$TMPL/base.html"
