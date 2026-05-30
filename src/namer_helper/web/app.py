@@ -44,6 +44,18 @@ _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
+def _is_ignored_file(path: Path) -> bool:
+    name = path.name
+    if name.startswith((".", "._", "@__")):
+        return True
+    try:
+        if path.stat().st_size <= 0:
+            return True
+    except OSError:
+        return True
+    return False
+
+
 def _service_status() -> str:
     result = subprocess.run(
         ["systemctl", "is-active", _SERVICE], capture_output=True, text=True
@@ -62,7 +74,7 @@ def _dir_stats(namer_config: Path) -> dict[str, dict]:
         if path and path.exists():
             files = [
                 f for f in path.rglob("*")
-                if f.is_file() and not f.name.startswith(".") and not f.name.startswith("._")
+                if f.is_file() and not _is_ignored_file(f)
             ]
             stats[name] = {"path": str(path), "count": len(files)}
         else:
@@ -90,7 +102,7 @@ def _list_failed_files(failed_dir: Path) -> list[dict]:
             continue
         if f.suffix.lower() not in _VIDEO_EXTS:
             continue
-        if f.name.startswith(".") or f.name.startswith("._"):
+        if _is_ignored_file(f):
             continue
         try:
             size_mb = round(f.stat().st_size / 1_048_576, 1)
@@ -260,7 +272,7 @@ def create_app(
                         "relative": str(f.relative_to(target)),
                     }
                     for f in target.rglob("*")
-                    if f.is_file()
+                    if f.is_file() and not _is_ignored_file(f)
                 ],
                 key=lambda x: x["name"],
             )
@@ -309,7 +321,7 @@ def create_app(
                         continue
                     if video.suffix.lower() not in _VIDEO_EXTS:
                         continue
-                    if video.name.startswith(".") or video.name.startswith("._"):
+                    if _is_ignored_file(video):
                         continue
                     ok, _ = _move_to_directory(video, watch_dir)
                     if not ok:
@@ -639,7 +651,7 @@ def create_app(
                 continue
             if f.suffix.lower() not in _VIDEO_EXTS:
                 continue
-            if f.name.startswith(".") or f.name.startswith("._"):
+            if _is_ignored_file(f):
                 continue
             try:
                 size_bytes = f.stat().st_size
@@ -654,6 +666,7 @@ def create_app(
             except Exception:
                 cached_meta = {}
             duration_seconds = int(cached_meta.get("duration_seconds") or 0)
+            processed = bool(cached_meta.get("processed"))
             items.append({
                 "name": f.name,
                 "name_encoded": quote(f.name),
@@ -662,6 +675,7 @@ def create_app(
                 "duration_seconds": duration_seconds,
                 "duration_hms": _format_duration(duration_seconds),
                 "duration_cached": bool(duration_seconds),
+                "processed": processed,
             })
         return items
 
@@ -1348,7 +1362,12 @@ def create_app(
             if dst.exists():
                 return {"ok": False, "error": "Datei mit diesem Namen existiert bereits"}
             src.rename(dst)
-            if cached_meta and metadata_cache is not None:
+            if metadata_cache is not None:
+                import time as _time
+
+                cached_meta = dict(cached_meta)
+                cached_meta["processed"] = True
+                cached_meta["processed_at"] = int(_time.time())
                 metadata_cache.set(dst, cached_meta)
                 metadata_cache.invalidate(src)
             duration_seconds = int(cached_meta.get("duration_seconds") or 0)
@@ -1359,6 +1378,7 @@ def create_app(
                 "duration_seconds": duration_seconds,
                 "duration_hms": _format_duration(duration_seconds),
                 "duration_cached": bool(duration_seconds),
+                "processed": True,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1391,7 +1411,7 @@ def create_app(
                     continue
                 if video.suffix.lower() not in _VIDEO_EXTS:
                     continue
-                if video.name.startswith(".") or video.name.startswith("._"):
+                if _is_ignored_file(video):
                     continue
                 try:
                     ok, _ = _move_to_directory(video, watch_dir)

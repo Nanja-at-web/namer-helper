@@ -97,6 +97,16 @@
       oninput="applyFilterSort()"
       class="w-24 text-sm border border-gray-200 rounded px-2 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300">
   </div>
+  <!-- Status-Filter -->
+  <div class="flex items-center gap-1">
+    <span class="text-xs text-gray-400 whitespace-nowrap">Status</span>
+    <select id="processed-filter" onchange="applyFilterSort()"
+      class="text-sm border border-gray-200 rounded px-2 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+      <option value="">Alle</option>
+      <option value="open">Offen</option>
+      <option value="processed">Bearbeitet</option>
+    </select>
+  </div>
   <!-- Zähler + Reset -->
   <span id="filter-count" class="text-xs text-gray-400 whitespace-nowrap"></span>
   <button onclick="clearFilter()" id="filter-clear"
@@ -129,12 +139,18 @@
             Dauer
           </button>
         </th>
+        <th class="text-center px-4 py-3">
+          <button onclick="setSort('processed')" class="flex items-center gap-1 mx-auto hover:text-gray-700 group">
+            <span id="sort-processed-icon" class="text-gray-300 group-hover:text-gray-500">↕</span>
+            Status
+          </button>
+        </th>
         <th class="text-right px-4 py-3">Aktionen</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100" id="file-table">
       {% for f in files %}
-      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}">
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}">
         <td class="px-4 py-3">
           <input type="checkbox" class="file-cb rounded border-gray-300"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
@@ -142,6 +158,13 @@
         <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">{{ f.name }}</td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap font-mono" id="duration-{{ loop.index }}">{{ f.duration_hms if f.duration_cached else '…' }}</td>
+        <td class="px-4 py-3 text-center whitespace-nowrap" id="processed-{{ loop.index }}">
+          {% if f.processed %}
+          <span class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Bearbeitet</span>
+          {% else %}
+          <span class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-400">Offen</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
           <button
             onclick="openPlayerForRow({{ loop.index }})"
@@ -168,7 +191,7 @@
       </tr>
       <!-- Lookup result panel -->
       <tr id="lookup-{{ loop.index }}" class="hidden bg-purple-50">
-        <td colspan="5" class="px-4 py-3">
+        <td colspan="6" class="px-4 py-3">
           <div class="lookup-content text-sm"></div>
         </td>
       </tr>
@@ -213,7 +236,7 @@ function rowDisplayName(rowIndex) {
   return document.getElementById('name-' + rowIndex)?.textContent || '';
 }
 
-function updateRowIdentity(rowIndex, newName, encodedName, durationSeconds, durationHms) {
+function updateRowIdentity(rowIndex, newName, encodedName, durationSeconds, durationHms, processed=false) {
   const row = document.getElementById('row-' + rowIndex);
   const cell = document.getElementById('name-' + rowIndex);
   const cb = row?.querySelector('.file-cb');
@@ -223,8 +246,14 @@ function updateRowIdentity(rowIndex, newName, encodedName, durationSeconds, dura
     row.dataset.encoded = encodedName;
     row.dataset.duration = durationSeconds ? String(durationSeconds) : '';
     row.dataset.durationLoaded = durationSeconds ? '1' : '0';
+    if (processed) {
+      row.dataset.processed = '1';
+      row.classList.add('bg-green-50');
+    }
   }
   if (cb) cb.dataset.encoded = encodedName;
+  const pcell = document.getElementById('processed-' + rowIndex);
+  if (pcell && processed) pcell.innerHTML = '<span class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Bearbeitet</span>';
   const dcell = document.getElementById('duration-' + rowIndex);
   if (dcell) dcell.textContent = durationSeconds ? durationHms : '…';
 }
@@ -825,7 +854,7 @@ async function doRename(encodedName, newName, rowIndex) {
   const res = await fetch(`/pre-check/rename?name=${encodedName}&new_name=${encodeURIComponent(newName)}`, {method: 'POST'});
   const json = await res.json();
   if (json.ok) {
-    updateRowIdentity(rowIndex, json.new_name, json.name_encoded || encodeURIComponent(json.new_name), json.duration_seconds || 0, json.duration_hms || '—');
+    updateRowIdentity(rowIndex, json.new_name, json.name_encoded || encodeURIComponent(json.new_name), json.duration_seconds || 0, json.duration_hms || '—', !!json.processed);
     const panel = document.getElementById('lookup-' + rowIndex);
     if (panel) panel.classList.add('hidden');
     applyFilterSort();
@@ -846,7 +875,7 @@ function escHtml(str) {
 }
 
 // ── Sortierung + Filter ──
-let sortCol = null;   // 'name' | 'size' | 'duration'
+let sortCol = null;   // 'name' | 'size' | 'duration' | 'processed'
 let sortAsc = true;
 
 function setSort(col) {
@@ -873,6 +902,7 @@ function applyFilterSort() {
   const valBytes = isNaN(valMB) ? null : valMB * 1_048_576;
   const durationOp = document.getElementById('duration-op').value;
   const durationVal = parseDurationInput(document.getElementById('duration-val').value);
+  const processedFilter = document.getElementById('processed-filter').value;
 
   const tbody = document.getElementById('file-table');
   const pairs = [];
@@ -903,7 +933,13 @@ function applyFilterSort() {
     return true;
   }
 
-  const rowMatches = row => (!q || row.dataset.name.includes(q)) && sizeMatch(row) && durationMatch(row);
+  function processedMatch(row) {
+    if (!processedFilter) return true;
+    const done = row.dataset.processed === '1';
+    return processedFilter === 'processed' ? done : !done;
+  }
+
+  const rowMatches = row => (!q || row.dataset.name.includes(q)) && sizeMatch(row) && durationMatch(row) && processedMatch(row);
   const filtered = pairs.filter(({ row }) => rowMatches(row));
   const hidden = pairs.filter(({ row }) => !rowMatches(row));
 
@@ -912,9 +948,11 @@ function applyFilterSort() {
     filtered.sort((a, b) => {
       let va = sortCol === 'size' ? parseFloat(a.row.dataset.size)
         : sortCol === 'duration' ? parseFloat(a.row.dataset.duration || '0')
+        : sortCol === 'processed' ? parseInt(a.row.dataset.processed || '0', 10)
         : a.row.dataset.name;
       let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size)
         : sortCol === 'duration' ? parseFloat(b.row.dataset.duration || '0')
+        : sortCol === 'processed' ? parseInt(b.row.dataset.processed || '0', 10)
         : b.row.dataset.name;
       if (sortCol === 'duration') {
         va = a.row.dataset.durationLoaded === '1' ? va : Number.POSITIVE_INFINITY;
@@ -940,7 +978,7 @@ function applyFilterSort() {
   });
 
   // Update sort icons
-  ['name', 'size', 'duration'].forEach(c => {
+  ['name', 'size', 'duration', 'processed'].forEach(c => {
     const el = document.getElementById('sort-' + c + '-icon');
     if (!el) return;
     el.textContent = sortCol !== c ? '↕' : sortAsc ? '↑' : '↓';
@@ -950,7 +988,7 @@ function applyFilterSort() {
   // Counter + reset button
   const total = pairs.length;
   const shown = filtered.length;
-  const hasFilter = q || (op && valBytes !== null) || (durationOp && durationVal !== null);
+  const hasFilter = q || (op && valBytes !== null) || (durationOp && durationVal !== null) || processedFilter;
   document.getElementById('filter-count').textContent =
     hasFilter ? `${shown} von ${total}` : `${total} Dateien`;
   document.getElementById('filter-clear').classList.toggle('hidden', !hasFilter);
@@ -962,6 +1000,7 @@ function clearFilter() {
   document.getElementById('size-val').value = '';
   document.getElementById('duration-op').value = '';
   document.getElementById('duration-val').value = '';
+  document.getElementById('processed-filter').value = '';
   applyFilterSort();
 }
 
