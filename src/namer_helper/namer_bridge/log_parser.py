@@ -1,5 +1,9 @@
 """
 Parses namer failed-log files (.namer_failed.log) and watchdog logs.
+
+Each FailedMatch is classified with a FailureReason that explains why
+Namer could not match the file.  The classification uses the parsed log
+data plus normalize() to detect leet/noise in the filename.
 """
 
 from __future__ import annotations
@@ -7,8 +11,23 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
+
+class FailureReason(Enum):
+    NO_DATE          = "A"  # no date found in filename / log
+    UNKNOWN_STUDIO   = "B"  # site_hint absent — studio not identifiable
+    PERFORMER_ABBREV = "C"  # performer abbreviation could not be resolved
+    LOW_FUZZY_SCORE  = "D"  # match_score < 0.95 (best candidate below threshold)
+    ZERO_API_RESULTS = "E"  # no candidates returned by TPDB (no score in log)
+    MULTIPLE_MATCHES = "F"  # multiple equal-score candidates, no winner chosen
+    LEET_NOT_PARSED  = "H"  # leet-speak detected in filename
+    NOISE_CHARS      = "I"  # noise characters (#, *, brackets) in filename
+    UNKNOWN          = "Z"  # could not determine reason
+
+
+_NAMER_THRESHOLD = 0.95   # RapidFuzz similarity threshold Namer uses
 
 _FAILED_LOG_SUFFIX = ".namer_failed.log"
 _MATCH_SCORE_RE = re.compile(r"match score[:\s]+([0-9.]+)", re.IGNORECASE)
@@ -30,7 +49,36 @@ class FailedMatch:
     phash: str | None = None
     oshash: str | None = None
     duration: int | None = None
+    failure_reason: FailureReason = FailureReason.UNKNOWN
     raw_log: str = field(default="", repr=False)
+
+
+def classify_failure(match: "FailedMatch") -> FailureReason:
+    """Determine the most likely reason Namer failed to match this file.
+
+    Priority order: leet/noise (fixable by normalize) → score signals
+    (API results, threshold) → structural gaps (date, studio) → unknown.
+    """
+    from namer_helper.normalize import normalize
+    norm = normalize(match.file_path.name)
+
+    if norm.leet_detected:
+        return FailureReason.LEET_NOT_PARSED
+    if norm.noise_detected:
+        return FailureReason.NOISE_CHARS
+    if match.match_score is None:
+        # No score in log → TPDB returned zero candidates
+        return FailureReason.ZERO_API_RESULTS
+    if match.match_score >= _NAMER_THRESHOLD:
+        # Score passed the threshold but file is still in failed — multiple matches
+        return FailureReason.MULTIPLE_MATCHES
+    if match.match_score < _NAMER_THRESHOLD:
+        return FailureReason.LOW_FUZZY_SCORE
+    if match.date_hint is None:
+        return FailureReason.NO_DATE
+    if match.site_hint is None:
+        return FailureReason.UNKNOWN_STUDIO
+    return FailureReason.UNKNOWN
 
 
 def find_failed_logs(failed_dir: Path) -> Iterator[Path]:
@@ -53,7 +101,7 @@ def parse_failed_log(log_path: Path) -> FailedMatch:
     oshash_match = _OSHASH_RE.search(raw)
     duration_match = _DURATION_RE.search(raw)
 
-    return FailedMatch(
+    result = FailedMatch(
         file_path=media_path,
         log_path=log_path,
         match_score=float(score_match.group(1)) if score_match else None,
@@ -64,6 +112,8 @@ def parse_failed_log(log_path: Path) -> FailedMatch:
         duration=int(duration_match.group(1)) if duration_match else None,
         raw_log=raw,
     )
+    result.failure_reason = classify_failure(result)
+    return result
 
 
 def collect_failed_matches(failed_dir: Path) -> list[FailedMatch]:

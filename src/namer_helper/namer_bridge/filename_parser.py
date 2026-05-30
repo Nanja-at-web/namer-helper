@@ -2,7 +2,11 @@
 Structured filename extraction — fast, deterministic pre-processing.
 
 Strips technical noise, extracts date/resolution/studio/performers from
-common video filename conventions. No external dependencies.
+common video filename conventions.
+
+normalize() is called early to resolve leet-speak and noise before the
+structural parsing steps run. @mention and #hashtag markers are extracted
+from the raw stem first (before normalize removes # as a noise char).
 
 Used as a first pass before Ollama: the cleaned title is a much better
 LLM input than the raw filename, and extracted date/performers are used
@@ -15,6 +19,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from namer_helper.normalize import normalize as _normalize
 
 if TYPE_CHECKING:
     from namer_helper.aliases import Aliases
@@ -59,22 +65,33 @@ class FilenameInfo:
 
 def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     info = FilenameInfo()
-    stem = Path(name).stem
+    stem = Path(name).stem  # strip video extension
 
-    # Resolution label
+    # Resolution from original stem (checked before normalize alters case/content)
     res_m = _RES_RE.search(stem)
     if res_m:
         raw = res_m.group(1)
         info.resolution = "4K" if raw.upper() == "4K" else raw.lower()
 
-    # Explicit markup: @mention → studio, #tag → performers
+    # Extract @mention/@hashtag markers from the RAW stem — normalize must not run
+    # first because it removes '#' as a noise char, breaking hashtag detection.
     mentions = re.findall(r'@(\w[\w_]*)', stem)
     hashtags = re.findall(r'#(\w[\w_]*)', stem)
     if mentions:
-        info.studio = mentions[0].replace('_', ' ').title()
+        # Normalize the extracted studio value (resolves leet like @3v1l_4ng3l)
+        raw_studio = mentions[0].replace('_', ' ')
+        info.studio = _normalize(raw_studio).normalized.title()
     if hashtags:
-        info.performers = [t.replace('_', ' ') for t in hashtags[:5]]
+        # Normalize each performer token (resolves leet initials/names)
+        info.performers = [
+            _normalize(t.replace('_', ' ')).normalized
+            for t in hashtags[:5]
+        ]
     work = re.sub(r'[#@]\w[\w_]*', ' ', stem)
+
+    # Normalize the remaining work string: leet, noise chars, unicode.
+    # work has no video extension at this point, so normalize treats it as a stem.
+    work = _normalize(work).normalized
 
     # Date
     dm = _DATE_RE.search(work)
