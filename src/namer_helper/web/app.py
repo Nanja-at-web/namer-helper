@@ -45,8 +45,8 @@ _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def _is_ignored_file(path: Path) -> bool:
-    name = path.name
-    if name.startswith((".", "._", "@__")):
+    ignored_prefixes = (".", "._", "@__", ".@__")
+    if any(part.startswith(ignored_prefixes) for part in path.parts):
         return True
     try:
         if path.stat().st_size <= 0:
