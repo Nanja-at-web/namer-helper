@@ -794,6 +794,7 @@ def create_app(
         try:
             from namer_helper.namer_bridge.filename_parser import parse_filename
             from namer_helper.namer_bridge.hasher import compute_oshash, compute_phash, detect_studio_logo, extract_frame_text, get_video_info
+            from namer_helper.jav import detect as detect_jav
             from namer_helper.ollama_bridge.analyzer import analyze_filename
             from namer_helper.ollama_bridge.client import OllamaClient
             from namer_helper.stash_bridge.stashdb import StashDBClient
@@ -804,6 +805,7 @@ def create_app(
             ai_cfg = load_ai_config(helper_config_dir)
             pre_dir = Path(ai_cfg.pre_check_dir)
             parsed = parse_filename(name)
+            jav_code = detect_jav(name)
             ext = Path(name).suffix
             hashes: dict = {"phash": None, "oshash": None, "duration": None, "resolution": None, "ocr_text": ""}
             video_path = _safe_path(pre_dir, name)
@@ -958,12 +960,19 @@ def create_app(
                     oshash=oshash, phash=phash
                 )
 
-            sdb_result, sdb_performer_result, sdb_context_result, tpdb_fp_result, tpdb_movie_fp_result = await asyncio.gather(
+            def _tpdb_jav():
+                if not jav_code:
+                    return None
+                tpdb_key = ai_cfg.theporndb_api_key or read_namer_porndb_token(namer_config)
+                return ThePornDBClient(api_key=tpdb_key).search_jav_by_code(jav_code.code)
+
+            sdb_result, sdb_performer_result, sdb_context_result, tpdb_fp_result, tpdb_movie_fp_result, tpdb_jav_result = await asyncio.gather(
                 loop.run_in_executor(None, _stashdb),
                 loop.run_in_executor(None, _stashdb_performer),
                 loop.run_in_executor(None, _stashdb_context),
                 loop.run_in_executor(None, _tpdb_fp),
                 loop.run_in_executor(None, _tpdb_movie_fp),
+                loop.run_in_executor(None, _tpdb_jav),
             )
 
             # Merge StashDB results — priority: fingerprint > context search > performer lookup
@@ -1014,6 +1023,8 @@ def create_app(
             tpdb_suggested: str | None = None
             tpdb_match_method: str = "hash"
             tpdb_result = tpdb_fp_result  # fingerprint result from Phase 3
+            if not (tpdb_result and tpdb_result.found) and tpdb_jav_result and tpdb_jav_result.found:
+                tpdb_result = tpdb_jav_result
             tpdb_movies: list[dict] = []
             tpdb_movie_error: str | None = None
             tpdb_movie_suggested: str | None = None
@@ -1028,7 +1039,7 @@ def create_app(
                     parsed.performers = _studio_parts
                     parsed.studio = None
 
-            if has_primary_result or (tpdb_result and tpdb_result.found) or (tpdb_movie_result and tpdb_movie_result.found) or parsed.performers:
+            if has_primary_result or jav_code or (tpdb_result and tpdb_result.found) or (tpdb_movie_result and tpdb_movie_result.found) or parsed.performers:
                 tpdb_key = ai_cfg.theporndb_api_key or read_namer_porndb_token(namer_config)
                 tpdb = ThePornDBClient(api_key=tpdb_key)
 
@@ -1142,7 +1153,7 @@ def create_app(
                     ]
                     if tpdb_result.best:
                         b = tpdb_result.best
-                        if b.match_method == "hash" or b.score >= 50:
+                        if b.match_method in {"hash", "jav"} or b.score >= 50:
                             parts = [p for p in [b.site or b.network, b.date, b.title] if p]
                             tname = " - ".join(parts)
                             if b.performers:
@@ -1216,6 +1227,7 @@ def create_app(
                 "resolution": parsed.resolution,
                 "tech_tags": parsed.tech_tags,
                 "confidence": parsed.confidence,
+                "jav_code": jav_code.code if jav_code else None,
             }
             identification = build_identification(
                 original_name=name,

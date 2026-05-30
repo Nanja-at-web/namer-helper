@@ -79,3 +79,39 @@ def test_tpdb_movie_context_search_uses_rest_and_scores(monkeypatch):
     assert result.found
     assert result.best.id == "movie-1"
     assert result.best.score >= 80
+
+
+def test_tpdb_jav_search_uses_rest_sku_and_parses_scene(monkeypatch):
+    client = ThePornDBClient(api_key="token")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params or {}))
+        if path == "/jav" and (params or {}).get("sku") == "ABP-123":
+            return {
+                "data": [{
+                    "id": "jav-1",
+                    "title": "Example JAV Scene",
+                    "date": "2024-01-02",
+                    "duration": 1200,
+                    "sku": "ABP-123",
+                    "image": "https://example.invalid/jav.jpg",
+                    "site": {"name": "Example Studio", "network": {"name": "Example Network"}},
+                    "performers": [{"name": "Performer A"}],
+                }]
+            }, None
+        return {"data": []}, None
+
+    monkeypatch.setattr(client, "_get_rest", fake_get)
+
+    result = client.search_jav_by_code("abp-123")
+
+    assert calls[0] == ("/jav", {"sku": "ABP-123", "q": None, "per_page": 5})
+    assert result.found
+    assert result.match_method == "jav"
+    assert result.best.id == "jav-1"
+    assert result.best.match_method == "jav"
+    assert result.best.score == 100
+    assert result.best.site == "Example Studio"
+    assert result.best.network == "Example Network"
+    assert result.best.performers == ["Performer A"]

@@ -181,6 +181,31 @@ def build_identification(
             signals=["Fingerprint-Treffer"],
         ).to_dict()
 
+    if tpdb and tpdb.get("match_method") == "jav":
+        duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(tpdb))
+        if duration_conflict:
+            return Identification(
+                status="possible",
+                confidence=0.35,
+                source="ThePornDB JAV-Code",
+                reason="JAV-Code passt, aber die Dauer passt nicht zum Datenbanktreffer",
+                suggested_name=None,
+                action="review",
+                signals=[duration_signal or "Dauerkonflikt"],
+            ).to_dict()
+        signals = ["JAV-Code-Treffer"]
+        if duration_signal:
+            signals.append(duration_signal)
+        return Identification(
+            status="identified",
+            confidence=0.94,
+            source="ThePornDB JAV-Code",
+            reason="ThePornDB hat die Szene über den JAV-Code erkannt",
+            suggested_name=tpdb_suggested or _with_ext(_scene_name(tpdb), ext),
+            action="rename",
+            signals=signals,
+        ).to_dict()
+
     if movie and (movie.get("match_method") == "hash" or not movie.get("score")):
         return Identification(
             status="identified",

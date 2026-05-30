@@ -273,6 +273,41 @@ class ThePornDBClient:
             ))
         return scenes
 
+    def _parse_rest_scenes(self, raw: list, method: str) -> list[ThePornDBScene]:
+        scenes: list[ThePornDBScene] = []
+        for s in raw:
+            scene_id = s.get("id") or s.get("uuid") or ""
+            site_obj = s.get("site") or {}
+            network_obj = site_obj.get("network") or site_obj.get("parent") or {}
+            performers = [
+                p.get("name", "") if isinstance(p, dict) else str(p)
+                for p in (s.get("performers") or [])
+                if (p.get("name") if isinstance(p, dict) else p)
+            ]
+            raw_dur = s.get("duration")
+            image = s.get("image") or s.get("poster") or s.get("poster_image") or ""
+            if isinstance(s.get("images"), list) and s["images"]:
+                first_image = s["images"][0]
+                if isinstance(first_image, dict):
+                    image = first_image.get("url") or image
+            if isinstance(s.get("posters"), dict):
+                image = s["posters"].get("large") or s["posters"].get("full") or image
+            scenes.append(ThePornDBScene(
+                id=str(scene_id),
+                title=s.get("title") or "",
+                date=s.get("date"),
+                site=site_obj.get("name") if isinstance(site_obj, dict) else None,
+                network=network_obj.get("name") if isinstance(network_obj, dict) else None,
+                performers=performers,
+                url=s.get("url") or (f"https://api.theporndb.net/jav/{scene_id}" if scene_id else ""),
+                image=image or "",
+                match_method=method,
+                score=100 if method == "jav" else 0,
+                score_breakdown={"JAV-Code": 100} if method == "jav" else {},
+                duration=int(raw_dur) if raw_dur else None,
+            ))
+        return scenes
+
     def query_by_fingerprints(
         self, *, oshash: str | None = None, phash: str | None = None
     ) -> ThePornDBResult:
@@ -427,6 +462,52 @@ class ThePornDBClient:
             return ThePornDBResult(scenes=all_candidates[:3], match_method="performer")
 
         return ThePornDBResult(scenes=scored[:3], match_method="performer")
+
+    def search_jav_by_code(self, code: str) -> ThePornDBResult:
+        """Direct JAV lookup via TPDB REST /jav.
+
+        JAV filenames often encode the canonical scene identifier directly
+        (for example ABP-123). Searching this field is more precise than the
+        generic scene text search.
+        """
+        normalized = code.upper().strip()
+        if not normalized:
+            return ThePornDBResult(error="Kein JAV-Code verfügbar", match_method="jav")
+
+        variants = [normalized]
+        compact = normalized.replace("-", "")
+        if compact != normalized:
+            variants.append(compact)
+
+        seen_ids: set[str] = set()
+        scenes: list[ThePornDBScene] = []
+        last_error: str | None = None
+        for value in variants:
+            body, err = self._get_rest("/jav", {"sku": value, "q": None, "per_page": 5})
+            if err:
+                last_error = err
+                continue
+            raw = (body or {}).get("data") or []
+            for scene in self._parse_rest_scenes(raw, "jav"):
+                if scene.id and scene.id not in seen_ids:
+                    seen_ids.add(scene.id)
+                    scenes.append(scene)
+            if scenes:
+                break
+
+        if not scenes:
+            body, err = self._get_rest("/jav", {"q": normalized, "per_page": 5})
+            if err:
+                last_error = err
+            raw = (body or {}).get("data") if body else []
+            for scene in self._parse_rest_scenes(raw or [], "jav"):
+                if scene.id and scene.id not in seen_ids:
+                    seen_ids.add(scene.id)
+                    scenes.append(scene)
+
+        if scenes:
+            return ThePornDBResult(scenes=scenes[:3], match_method="jav")
+        return ThePornDBResult(error=last_error or f"Kein JAV-Treffer für {normalized}", match_method="jav")
 
     def _get_rest(self, path: str, params: dict | None = None) -> tuple[dict | None, str | None]:
         if not self._api_key:

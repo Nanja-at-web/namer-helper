@@ -139,6 +139,62 @@ def test_identification_accepts_tpdb_movie_context_match():
     assert result["suggested_name"] == "Movie Studio - 2020-05-06 - Feature Movie.mp4"
 
 
+def test_identification_accepts_tpdb_jav_code_match():
+    result = build_identification(
+        original_name="ABP-123.mp4",
+        stashdb_scenes=[],
+        stashdb_suggested=None,
+        tpdb_scenes=[{
+            "title": "Example JAV Scene",
+            "date": "2024-01-02",
+            "site": "Example Studio",
+            "performers": ["Performer A"],
+            "duration": 1200,
+            "score": 100,
+            "match_method": "jav",
+        }],
+        tpdb_suggested="Example Studio - 2024-01-02 - Example JAV Scene.mp4",
+        ollama=None,
+        filename_parsed={"jav_code": "ABP-123"},
+        dest_duplicate=None,
+        local_duration=1205,
+    )
+
+    assert result["status"] == "identified"
+    assert result["source"] == "ThePornDB JAV-Code"
+    assert result["action"] == "rename"
+    assert result["suggested_name"] == "Example Studio - 2024-01-02 - Example JAV Scene.mp4"
+    assert "JAV-Code-Treffer" in result["signals"]
+
+
+def test_identification_rejects_tpdb_jav_duration_mismatch():
+    result = build_identification(
+        original_name="ABP-123.mp4",
+        stashdb_scenes=[],
+        stashdb_suggested=None,
+        tpdb_scenes=[{
+            "title": "Example JAV Scene",
+            "date": "2024-01-02",
+            "site": "Example Studio",
+            "performers": ["Performer A"],
+            "duration": 1306,
+            "score": 100,
+            "match_method": "jav",
+        }],
+        tpdb_suggested="Example Studio - 2024-01-02 - Example JAV Scene.mp4",
+        ollama=None,
+        filename_parsed={"jav_code": "ABP-123"},
+        dest_duplicate=None,
+        local_duration=9106,
+    )
+
+    assert result["status"] == "possible"
+    assert result["source"] == "ThePornDB JAV-Code"
+    assert result["suggested_name"] is None
+    assert result["action"] == "review"
+    assert any("Dauerkonflikt" in signal for signal in result["signals"])
+
+
 
 def test_identification_hides_low_score_tpdb_scene_suggestion():
     result = build_identification(
