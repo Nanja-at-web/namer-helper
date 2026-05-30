@@ -1,15 +1,20 @@
 """
 Studio and performer abbreviation resolution.
 
-Loads alias mappings from data/aliases.json and resolves short codes
-found in parsed filenames (EA → Evil Angel, BRZ → Brazzers, …).
+Two alias sources — layered in priority order:
 
-Self-learning: after a successful TPDB/StashDB match call learn() to
-persist newly discovered abbreviations — keys are stored uppercase so
-lookups are always case-insensitive.
+  1. Runtime aliases  — /etc/namer-helper/aliases.json  (writable by the app,
+                         populated by learn() after successful TPDB matches)
+  2. Package aliases  — src/namer_helper/data/aliases.json  (ships with the
+                         wheel, initial studio set, read-only after install)
 
-Never raises: load() falls back to built-in defaults on any I/O error,
-learn() silently swallows write errors (alias learning is best-effort).
+load(path) reads the file at the given path.  When the file is missing it
+falls back to the built-in _DEFAULT_STUDIOS dict — so the app degrades
+gracefully on a fresh install before any aliases file exists.
+
+learn() always writes to the runtime path passed by the caller (typically
+/etc/namer-helper/aliases.json) so learned aliases survive restarts and
+are separate from the package file (which may be overwritten on upgrade).
 """
 
 from __future__ import annotations
@@ -17,6 +22,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Built-in path: ships inside the package wheel.
+# Use this as the initial / fallback source in tests and CLI tools.
+PACKAGE_ALIASES_PATH: Path = Path(__file__).parent / "data" / "aliases.json"
 
 
 # Built-in fallback — used when aliases.json is missing or unreadable.
@@ -48,8 +57,15 @@ class Aliases:
     performers: dict[str, str] = field(default_factory=dict)
 
 
-def load(path: Path) -> Aliases:
-    """Load aliases from a JSON file. Returns built-in defaults if missing."""
+def load(path: Path | None = None) -> Aliases:
+    """Load aliases from a JSON file. Returns built-in defaults if missing.
+
+    path=None → uses PACKAGE_ALIASES_PATH (the file shipped with the wheel).
+    Pass helper_config_dir / "aliases.json" at runtime so learn() and load()
+    work from the same writable location.
+    """
+    if path is None:
+        path = PACKAGE_ALIASES_PATH
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return Aliases(

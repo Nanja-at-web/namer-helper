@@ -39,6 +39,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/namer_helper"]
+# src/namer_helper/data/ (aliases.json) is included automatically because
+# it lives inside the package tree. No extra include needed.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

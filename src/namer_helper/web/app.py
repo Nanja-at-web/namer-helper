@@ -795,6 +795,7 @@ def create_app(
             from namer_helper.namer_bridge.filename_parser import parse_filename
             from namer_helper.namer_bridge.hasher import compute_oshash, compute_phash, detect_studio_logo, extract_frame_text, get_video_info
             from namer_helper.jav import detect as detect_jav
+            from namer_helper.aliases import load as load_aliases
             from namer_helper.ollama_bridge.analyzer import analyze_filename
             from namer_helper.ollama_bridge.client import OllamaClient
             from namer_helper.stash_bridge.stashdb import StashDBClient
@@ -804,7 +805,10 @@ def create_app(
             loop = asyncio.get_running_loop()
             ai_cfg = load_ai_config(helper_config_dir)
             pre_dir = Path(ai_cfg.pre_check_dir)
-            parsed = parse_filename(name)
+            # Runtime aliases: /etc/namer-helper/aliases.json (same path learn() writes to).
+            # Falls back to package defaults if the file doesn't exist yet.
+            aliases = load_aliases(helper_config_dir / "aliases.json")
+            parsed = parse_filename(name, aliases=aliases)
             jav_code = detect_jav(name)
             ext = Path(name).suffix
             hashes: dict = {"phash": None, "oshash": None, "duration": None, "resolution": None, "ocr_text": ""}
