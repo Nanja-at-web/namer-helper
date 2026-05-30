@@ -7,9 +7,9 @@ from namer_helper.normalize import normalize, _leet_token, LEET_MAP
 # ── _leet_token unit tests ────────────────────────────────────────────────────
 
 class TestLeetToken:
-    def test_interior_both_alpha_replaced(self):
-        # 0 between r and n — interior, both alpha → replace (0→o, gives "pron")
-        # Note: pr0n is leet for "pron" not "porn" — p0rn → porn
+    def test_interior_alpha_replaced(self):
+        # 0 between r (alpha) and n (alpha) → at least one alpha → replace
+        # pr0n = p+r+o+n = "pron"  (not "porn"; p0rn → porn)
         assert _leet_token("pr0n") == ("pron", True)
 
     def test_interior_one_digit_neighbour_not_replaced(self):
@@ -55,6 +55,18 @@ class TestLeetToken:
     def test_single_digit_token_no_neighbours(self):
         # Single char "3" has no neighbours → no replacement
         assert _leet_token("3") == ("3", False)
+
+    def test_leet_chain_propagates(self):
+        # D03: '0' anchored by 'D' (alpha left) → replaced to 'o'.
+        # '3' then sees 'o' (alpha, just set) on the left → replaced to 'e'.
+        # Left-to-right propagation through updated chars.
+        assert _leet_token("D03") == ("Doe", True)
+
+    def test_episode_marker_protected(self):
+        assert _leet_token("S01E05") == ("S01E05", False)
+        assert _leet_token("s1e1")   == ("s1e1",   False)
+        assert _leet_token("E01")    == ("E01",     False)
+        assert _leet_token("EP01")   == ("EP01",    False)
 
 
 # ── normalize() integration tests ─────────────────────────────────────────────
@@ -174,6 +186,51 @@ class TestNormalize:
     def test_steps_recorded_for_noise(self):
         r = normalize("cu#t.mp4")
         assert "noise_chars" in r.steps
+
+    # ── Lücke 1: Performer-Namen mit Leet ──────────────────────────────────────
+
+    def test_performer_name_leet(self):
+        # J4n3 → Jane, D03 → Doe (chain propagation: 0 anchored by D, 3 by o)
+        r = normalize("J4n3.D03.mp4")
+        assert r.normalized == "Jane.Doe"
+        assert r.leet_detected is True
+
+    def test_performer_name_leet_underscore(self):
+        r = normalize("J4n3_D03.mp4")
+        assert r.normalized == "Jane_Doe"
+
+    # ── Lücke 2: JAV-Code-Schutz ───────────────────────────────────────────────
+
+    def test_jav_code_abp(self):
+        # ABP: no leet chars; 123: protected by \d{2,}
+        r = normalize("ABP-123.mp4")
+        assert r.normalized == "ABP-123"
+        assert r.leet_detected is False
+
+    def test_jav_code_ssis(self):
+        r = normalize("SSIS-456.mp4")
+        assert r.normalized == "SSIS-456"
+        assert r.leet_detected is False
+
+    def test_jav_code_with_leet_title(self):
+        # Code part stays intact, title part gets leet-normalized
+        r = normalize("ABP-123.3v1l.4ng3l.mp4")
+        assert "ABP-123" in r.normalized
+        assert "evil" in r.normalized
+        assert r.leet_detected is True
+
+    # ── Lücke 3: Kombiniert (Leet + Noise im selben Namen) ────────────────────
+
+    def test_combined_leet_noise_performer_year(self):
+        # 3v1l#4ng3l → noise char # removed → 3v1l4ng3l → evilangel
+        # J4n3 → Jane, D03 → Doe, 2023 → protected
+        r = normalize("3v1l#4ng3l.J4n3.D03.2023.mp4")
+        assert r.leet_detected is True
+        assert r.noise_detected is True
+        assert "evil" in r.normalized
+        assert "Jane" in r.normalized
+        assert "Doe" in r.normalized
+        assert "2023" in r.normalized
 
     def test_all_leet_chars_in_map(self):
         # Smoke test every LEET_MAP entry is exercised at boundaries

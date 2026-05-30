@@ -5,19 +5,25 @@ Handles: URL-encoding, Unicode → ASCII, bracket noise, noise chars (#/*),
 and leet-speak substitution. Does NOT strip technical tags (1080p, x264) —
 that remains the job of analyzer._STRIP_RE or filename_parser._TECH_RE.
 
-Leet substitution is adjacency-aware:
-  - Interior char (both neighbors are alnum): replace only if BOTH are alpha.
-  - Boundary char (start/end of token, or next to separator): replace if at
-    least one neighbor is alpha.
-  - Protected tokens (pure numbers, resolutions, codecs): never touched.
+Leet substitution rule (per token, left-to-right with updated chars):
+  Replace a leet char if AT LEAST ONE immediate neighbor (in the already
+  partially-substituted chars array) is alphabetic.  Technical tokens
+  (1080p, x264, S01E05, pure numbers, …) are skipped entirely via
+  _TECH_TOKEN_RE — that is where protection lives, not in the rule itself.
+
+  Left-to-right propagation handles chains automatically:
+    D03 → D[0→o]3 → Do[3→e] = Doe  (0 anchored by D, 3 anchored by o)
 
 Examples:
-  3v1l.4ng3l.mp4  →  evil.angel      (leet, separators preserved)
-  pr0n.mp4        →  porn            (leet: 0 between two alpha chars)
-  cu#t.avi        →  cut             (noise char removal)
-  1080p.mkv       →  1080p           (protected — not leet-replaced)
-  x264.mkv        →  x264            (protected — 2 in x264 not replaced)
-  %C3%A9ve.mp4    →  eve             (URL-decode + unicode strip)
+  3v1l.4ng3l.mp4          →  evil.angel   (leet, separators preserved)
+  J4n3.D03.mp4            →  Jane.Doe     (performer leet with chain)
+  p0rn.mp4                →  porn         (0 between p and r, both alpha)
+  cu#t.avi                →  cut          (noise char removal)
+  1080p.mkv               →  1080p        (protected token)
+  x264.mkv                →  x264         (protected token)
+  ABP-123.mp4             →  ABP-123      (letters no leet, 123 protected)
+  S01E05.mp4              →  S01E05       (episode marker protected)
+  %C3%A9ve.mp4            →  eve          (URL-decode + unicode strip)
 """
 
 from __future__ import annotations
@@ -36,7 +42,8 @@ LEET_MAP: dict[str, str] = {
 }
 
 # Tokens that are technical metadata — skip leet substitution entirely.
-# Covers resolutions (4K, 1080p), codecs (x264), sources (BluRay), pure numbers.
+# Covers resolutions (4K, 1080p), codecs (x264), sources (BluRay),
+# episode markers (S01E05), and pure numbers (years, chapter numbers, …).
 _TECH_TOKEN_RE = re.compile(
     r"^(?:"
     r"4[Kk]|2160[piP]?|1080[piP]?|720[piP]?|480[piP]?|360[piP]?"
@@ -44,7 +51,9 @@ _TECH_TOKEN_RE = re.compile(
     r"|WEB-?DL|WEBRip|BluRay|Blu-Ray|HDTV|DVDRip|BDRip|BRRip|WEB"
     r"|AAC[\d.]*|AC3|DTS[\w-]*|MP3|FLAC"
     r"|REPACK|PROPER|RERIP|EXTENDED|UNRATED|UNCENSORED"
-    r"|\d{2,}"   # pure multi-digit numbers: years, ep numbers, etc.
+    r"|[Ss]\d{1,3}[Ee]\d{1,3}"  # episode markers: S01E05, S1E1
+    r"|[Ee][Pp]?\d{1,4}"        # episode-only markers: E01, EP01, Ep1
+    r"|\d{2,}"                  # pure multi-digit numbers: years, chapters, …
     r")$",
     re.IGNORECASE,
 )
@@ -69,32 +78,30 @@ class NormalizeResult:
 
 
 def _leet_token(token: str) -> tuple[str, bool]:
-    """Apply leet substitutions within one word token (no separators inside)."""
+    """Apply leet substitutions within one word token (no separators inside).
+
+    Iterates left-to-right over the *current* chars array (not the original
+    token string), so substitutions propagate: once '0' becomes 'o' in 'D03',
+    the adjacent '3' sees an alphabetic left-neighbor and is replaced too.
+
+    Rule: replace a leet char if AT LEAST ONE immediate neighbor in the
+    (partially updated) chars array is alphabetic.  Technical tokens are
+    exempted entirely via _TECH_TOKEN_RE before this logic runs.
+    """
     if _TECH_TOKEN_RE.match(token):
         return token, False
     chars = list(token)
     detected = False
     n = len(token)
-    for i, ch in enumerate(token):
-        replacement = LEET_MAP.get(ch)
+    for i in range(n):
+        replacement = LEET_MAP.get(chars[i])
         if replacement is None:
             continue
-        left_alpha  = i > 0     and token[i - 1].isalpha()
-        right_alpha = i < n - 1 and token[i + 1].isalpha()
-        left_alnum  = i > 0     and token[i - 1].isalnum()
-        right_alnum = i < n - 1 and token[i + 1].isalnum()
-        # A char is "interior" when both neighbors are alnum (no separator nearby).
-        # Interior rule: require BOTH neighbors to be alpha (avoids 1080p → 108op).
-        # Boundary rule: at least ONE neighbor must be alpha.
-        interior = left_alnum and right_alnum
-        if interior:
-            if left_alpha and right_alpha:
-                chars[i] = replacement
-                detected = True
-        else:
-            if left_alpha or right_alpha:
-                chars[i] = replacement
-                detected = True
+        left_alpha  = i > 0     and chars[i - 1].isalpha()
+        right_alpha = i < n - 1 and chars[i + 1].isalpha()
+        if left_alpha or right_alpha:
+            chars[i] = replacement
+            detected = True
     return "".join(chars), detected
 
 
