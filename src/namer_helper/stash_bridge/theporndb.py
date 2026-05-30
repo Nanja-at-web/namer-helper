@@ -374,7 +374,7 @@ class ThePornDBClient:
             if err:
                 last_error = err
                 continue
-            raw = (body.get("data") or {}).get("searchScene") or []
+            raw = ((body or {}).get("data") or {}).get("searchScene") or []
             for scene in self._parse_scenes(raw, "title"):
                 if scene.id and scene.id not in seen_ids:
                     seen_ids.add(scene.id)

@@ -36,6 +36,7 @@ _SERVICE = "namer-watchdog"
 _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
+_SINGLE_LOOKUP_TIMEOUT_SECONDS = 120   # single /pre-check/lookup via browser
 
 
 def _is_ignored_file(path: Path) -> bool:
@@ -799,6 +800,32 @@ def create_app(
             return {"ok": False, "error": str(e)}
 
     @app.post("/pre-check/lookup")
+    async def pre_check_lookup_endpoint(name: str):
+        """HTTP-Endpunkt: einzelner Lookup mit 120 s Browser-Timeout-Schutz."""
+        try:
+            return await asyncio.wait_for(
+                pre_check_lookup(name), timeout=_SINGLE_LOOKUP_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            return {
+                "ok": False,
+                "error": (
+                    f"Analyse-Timeout nach {_SINGLE_LOOKUP_TIMEOUT_SECONDS}s — "
+                    "Datei möglicherweise zu groß oder Server ausgelastet"
+                ),
+                "hashes": {"phash": None, "oshash": None, "duration": None},
+                "identification": {
+                    "status": "unknown", "confidence": 0.0, "source": "timeout",
+                    "reason": "Timeout", "suggested_name": None,
+                    "action": "review", "signals": [],
+                },
+                "stashdb_scenes": [], "stashdb_error": "Timeout", "stashdb_suggested": None,
+                "tpdb_scenes": [], "tpdb_error": "Timeout", "tpdb_suggested": None,
+                "tpdb_movies": [], "tpdb_movie_error": "Timeout", "tpdb_movie_suggested": None,
+                "ollama": None, "filename_parsed": None,
+                "jav_code": None, "tpdb_crosscheck": "skipped",
+            }
+
     async def pre_check_lookup(name: str):
         try:
             from namer_helper.namer_bridge.filename_parser import parse_filename
