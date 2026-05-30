@@ -28,15 +28,8 @@ from namer_helper.web.mounts import (
 )
 from namer_helper.web.ai_config import AIConfig, load_ai_config, save_ai_config
 from namer_helper.web.identification import build_identification
-from namer_helper.web.proxmox import (
-    ensure_ssh_key,
-    load_proxmox_config,
-    run_remote,
-    save_proxmox_config,
-    setup_host_mount,
-    teardown_host_mount,
-    ProxmoxConfig,
-)
+# proxmox imported lazily inside create_app — keeps it optional and testable
+# without SSH infrastructure. Routes are registered only when import succeeds.
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _SERVICE = "namer-watchdog"
@@ -233,6 +226,22 @@ def create_app(
     app = FastAPI(title="namer-helper dashboard")
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["urlencode"] = lambda s: quote(str(s))
+
+    # Lazy-import proxmox module — SSH extras are optional infrastructure.
+    # Routes are only registered when the import succeeds.
+    try:
+        from namer_helper.web.proxmox import (
+            ensure_ssh_key,
+            load_proxmox_config,
+            run_remote,
+            save_proxmox_config,
+            setup_host_mount,
+            teardown_host_mount,
+            ProxmoxConfig,
+        )
+        _proxmox_available = True
+    except ImportError:
+        _proxmox_available = False
 
     @app.on_event("startup")
     async def _startup_checks() -> None:

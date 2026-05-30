@@ -133,7 +133,19 @@ def extract_frame_text(path: Path, timestamps: list[int] | None = None, duration
     Samples intro (1s, 3s, 5s, 8s) plus outro at 90% of duration if known.
     Hard timeout: 20 s total across all frames so this never blocks a request.
     Returns deduplicated lines with ≥5 letters and ≥2 words. Empty string on failure.
+    Returns empty string if ffmpeg or tesseract are not installed.
     """
+    import os
+    import tempfile
+    import time
+
+    try:
+        return _extract_frame_text_inner(path, timestamps, duration)
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _extract_frame_text_inner(path: Path, timestamps: list[int] | None, duration: int | None) -> str:
     import os
     import tempfile
     import time

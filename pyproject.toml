@@ -27,6 +27,8 @@ dependencies = [
 #               Optional: Pre-Check läuft ohne es, Logo-Erkennung wird übersprungen
 
 [project.optional-dependencies]
+# httpx is required for FastAPI TestClient (test_app.py)
+test = ["httpx>=0.27"]
 # Für zukünftige Embedding-Suche (MVP Phase 3):
 # embed = ["chromadb>=0.4"]
 
