@@ -139,6 +139,14 @@ class TestNormalize:
         assert "[720p]" not in r.normalized
         assert r.noise_detected is True
 
+    def test_bracket_removal_no_trailing_space(self):
+        # "(3)" is replaced by a space internally, but final .strip() and
+        # multi-space collapse ensure no leading/trailing whitespace survives.
+        r = normalize("Film (3).mp4")
+        assert r.normalized == "Film"
+        assert not r.normalized.endswith(" ")
+        assert not r.normalized.startswith(" ")
+
     def test_url_decode(self):
         # %C3%A9 = é  → after unicode normalize → e
         r = normalize("%C3%A9ve.mp4")

@@ -14,6 +14,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from namer_helper.aliases import Aliases
 
 
 _TECH_RE = re.compile(
@@ -53,7 +57,7 @@ class FilenameInfo:
     confidence: float = 0.0
 
 
-def parse_filename(name: str) -> FilenameInfo:
+def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     info = FilenameInfo()
     stem = Path(name).stem
 
@@ -144,6 +148,14 @@ def parse_filename(name: str) -> FilenameInfo:
         break
 
     info.cleaned = _MULTI_SPACE.sub(' ', work).strip()
+
+    # Resolve studio/performer abbreviations if an alias table was provided.
+    if aliases is not None:
+        from namer_helper.aliases import resolve_studio, resolve_performer
+        if info.studio:
+            info.studio = resolve_studio(info.studio, aliases)
+        if info.performers:
+            info.performers = [resolve_performer(p, aliases) for p in info.performers]
 
     # Confidence: how much structure did we find?
     score = 0.15

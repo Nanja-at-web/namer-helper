@@ -1418,3 +1418,42 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 *Branches: main + backup/precheck-ai-proxmox-20260529 (vollständig analysiert)*
 *Kritik + revidierte Umsetzungsreihenfolge: 2026-05-30*
 *Tags: [C] Claude Sonnet 4.6 | [E]=Implementiert [I]=Geplant | [H/M/L]=Priorität*
+
+-----
+
+## Implementierungsstand stable/precheck (laufend aktualisiert) [E][H]
+
+**Branch:** `stable/precheck` | **Tests:** 118 | **Letzter Commit:** 2026-05-30
+
+### Abgeschlossene Schritte
+
+| Schritt | Modul | Status |
+|---------|-------|--------|
+| 0 | Branch `stable/precheck` erstellt, CLAUDE.md committed | ✓ |
+| 1a | README: Testanzahl korrigiert (50 → 118, wächst) | ✓ |
+| 1b | `helper.yaml`: Hinweis dass ollama/API-Keys aus `ai_config.json` kommen | ✓ |
+| 1c | `pyproject.toml`: ffmpeg/tesseract/moondream als System-Dep dokumentiert | ✓ |
+| 1d | `app.py`: Startup-Check für Binaries, moondream-Verfügbarkeitscheck | ✓ |
+| 4 | `normalize.py`: Leet, Noise, URL-decode, Unicode (93→118 Tests) | ✓ |
+| 5 | `aliases.py` + `data/aliases.json`: Studio-Alias-Auflösung | ✓ |
+
+### Noch ausstehend
+
+| Schritt | Modul | Priorität |
+|---------|-------|-----------|
+| 6 | `jav.py`: ABC-123 Code-Erkennung | Hoch |
+| 7 | `analyzer.py`: `_STRIP_RE` → `normalize()` refactoren | Hoch |
+| T | Tests: `test_filename_parser.py` mit normalize-Integration | Mittel |
+
+### Wichtige Architekturentscheidungen
+
+- **normalize.py** läuft VOR `filename_parser.py` und `analyzer.py`
+  - Gibt bereinigten Stem zurück (Separatoren erhalten, für downstream)
+  - Schutz über `_TECH_TOKEN_RE` (1080p, x264, S01E05, …)
+  - Chain-Propagation: `chars[i]` statt `token[i]` → D03 → Doe
+- **aliases.py** läuft NACH `filename_parser.py` (optionaler Parameter)
+  - Großbuchstaben-Abkürzungen unangetastet von normalize.py
+  - EA → Evil Angel erst durch aliases.py, nicht durch Leet-Logik
+  - `learn()` ist best-effort: silent fail bei I/O-Fehler
+- **ai_config.json** ist einzige Quelle für API-Keys und ollama_url (Web)
+  - `helper.yaml` ist nur Referenz/Defaults für Pfade
