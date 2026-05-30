@@ -233,7 +233,8 @@ Weitere Details: [docs/stash-bridge.md](docs/stash-bridge.md)
 .venv/bin/python -m pytest tests/ -v
 ```
 
-33 Tests, alle Komponenten abgedeckt.
+50 Tests in 9 Dateien (log_parser, renderer, stash_matcher, ollama_analyzer,
+precheck_identification, theporndb_context, scan_status, metadata_cache, file_filtering).
 
 ---
 

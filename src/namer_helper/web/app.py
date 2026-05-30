@@ -179,6 +179,52 @@ def _clean_lxc_id(value: object) -> str:
     return text if re.fullmatch(r"\d+", text) else "103"
 
 
+def _check_system_deps() -> None:
+    """Log warnings for missing optional system binaries at startup."""
+    from loguru import logger
+    missing = []
+    for binary in ("ffmpeg", "tesseract"):
+        result = subprocess.run(["which", binary], capture_output=True)
+        if result.returncode != 0:
+            missing.append(binary)
+    if missing:
+        logger.warning(
+            "Fehlende System-Binaries: {}. "
+            "Pre-Check-Funktionen sind eingeschränkt. "
+            "Debian/Ubuntu: apt install {}",
+            ", ".join(missing),
+            " ".join(missing),
+        )
+
+
+_moondream_available_cache: dict[str, bool] = {}
+
+
+def _is_moondream_available(ollama_url: str) -> bool:
+    """Check once per URL if moondream is pulled in Ollama."""
+    if ollama_url in _moondream_available_cache:
+        return _moondream_available_cache[ollama_url]
+    try:
+        import requests as _requests
+        resp = _requests.get(
+            f"{ollama_url.rstrip('/')}/api/tags", timeout=5
+        )
+        models = [m.get("name", "") for m in resp.json().get("models", [])]
+        available = any("moondream" in m for m in models)
+    except Exception:
+        available = False
+    _moondream_available_cache[ollama_url] = available
+    if not available:
+        from loguru import logger
+        logger.warning(
+            "moondream nicht in Ollama gefunden ({}). "
+            "Studio-Logo-Erkennung deaktiviert. "
+            "Aktivieren mit: ollama pull moondream",
+            ollama_url,
+        )
+    return available
+
+
 def create_app(
     namer_config: Path,
     report_output_dir: Path,
@@ -187,6 +233,13 @@ def create_app(
     app = FastAPI(title="namer-helper dashboard")
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["urlencode"] = lambda s: quote(str(s))
+
+    @app.on_event("startup")
+    async def _startup_checks() -> None:
+        _check_system_deps()
+        ai_cfg = load_ai_config(helper_config_dir)
+        if ai_cfg.ollama_url:
+            _is_moondream_available(ai_cfg.ollama_url)
 
     # ── Dashboard ────────────────────────────────────────────────────────────
 
@@ -838,6 +891,8 @@ def create_app(
 
             def _logo():
                 if not (has_video and ai_cfg.ollama_url):
+                    return None
+                if not _is_moondream_available(ai_cfg.ollama_url):
                     return None
                 try:
                     return detect_studio_logo(video_path, ai_cfg.ollama_url, model="moondream")

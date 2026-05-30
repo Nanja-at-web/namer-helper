@@ -13,6 +13,23 @@ dependencies = [
     "jinja2>=3.1",
 ]
 
+# System-Binaries (nicht via pip installierbar — separat installieren):
+#   ffmpeg    — Video-Hashing (pHash), OCR-Frame-Extraktion, Video-Info
+#               Debian/Ubuntu: apt install ffmpeg
+#               Proxmox LXC:  bereits im namer-install.sh enthalten
+#
+#   tesseract — OCR auf Video-Frames (extract_frame_text)
+#               Debian/Ubuntu: apt install tesseract-ocr tesseract-ocr-deu
+#               Optional: nur für Pre-Check OCR-Funktion benötigt
+#
+#   moondream — Ollama Vision-Modell für Studio-Logo-Erkennung (optional)
+#               ollama pull moondream
+#               Optional: Pre-Check läuft ohne es, Logo-Erkennung wird übersprungen
+
+[project.optional-dependencies]
+# Für zukünftige Embedding-Suche (MVP Phase 3):
+# embed = ["chromadb>=0.4"]
+
 [project.scripts]
 namer-helper = "namer_helper.cli:main"
 

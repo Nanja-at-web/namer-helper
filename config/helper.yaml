@@ -30,29 +30,30 @@ stash:
   # Stash Bridge aktivieren
   enabled: false
 
+# ---------------------------------------------------------------------------
+# HINWEIS: Ollama- und API-Keys werden NICHT aus dieser Datei gelesen.
+# Das Web-Dashboard (namer-helper serve) liest diese Werte aus:
+#   /etc/namer-helper/ai_config.json  (wird über /settings gespeichert)
+#
+# CLI-Befehle (analyze, stash-search) nutzen ihre --ollama-url / --model Flags.
+#
+# Diese Sektion ist Referenz für die empfohlenen Standardwerte:
+# ---------------------------------------------------------------------------
 ollama:
   # Empfohlene Variante: Ollama als eigener Proxmox-LXC
   # Installer: https://community-scripts.github.io/ProxmoxVE/scripts?id=ollama
-  # Nach der Installation die IP des Ollama-LXC eintragen, z.B.:
-  #   base_url: http://192.168.1.50:11434
+  # Nach der Installation: im Web-Dashboard unter /settings eintragen.
   #
   # Docker Full-Stack (--profile ollama):
   #   base_url: http://ollama:11434
   #
-  # Alternativ lokal (direktes Ollama):
-  #   base_url: http://localhost:11434
-  base_url: http://localhost:11434
-
-  # Empfohlene Modelle (lokal via `ollama pull <model>`):
+  # Empfohlene Modelle:
+  #   qwen2.5:3b    — beste JSON-Qualität, ~2 GB  (empfohlen)
   #   llama3        — gute Balance, ~4 GB
   #   mistral       — schnell, ~4 GB
-  #   gemma2        — kompakt, ~5 GB
-  model: llama3
-
-  # Timeout in Sekunden (erhöhen bei großen Modellen oder langsamer Hardware)
+  base_url: http://localhost:11434
+  model: qwen2.5:3b
   timeout: 30
-
-  # Ollama-Unterstützung aktivieren (false = Ollama-Befehle werden übersprungen)
   enabled: false
 
 privacy:
