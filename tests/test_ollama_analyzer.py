@@ -95,6 +95,28 @@ class TestPromptContent:
         analyze_filename("file.mp4", client, studio="Evil Angel")
         prompt = _captured_prompt(client)
         assert "Evil Angel" in prompt
+        assert "Studio/site:" in prompt
+
+    def test_logo_studio_marked_low_confidence(self):
+        # moondream output must NOT appear as a verified "Studio/site:" signal —
+        # it should be labelled as low-confidence so the LLM doesn't trust it blindly.
+        client = _make_client(_valid_response())
+        analyze_filename("file.mp4", client, logo_studio="Brazzers")
+        prompt = _captured_prompt(client)
+        assert "Brazzers" in prompt
+        assert "low confidence" in prompt.lower()
+        assert "Studio/site: Brazzers" not in prompt  # not the verified label
+
+    def test_confirmed_studio_takes_priority_over_logo(self):
+        # When both studio (confirmed) and logo_studio (unverified) are present,
+        # only the confirmed studio appears — no low-confidence line.
+        client = _make_client(_valid_response())
+        analyze_filename("file.mp4", client, studio="Evil Angel", logo_studio="Brazzers")
+        prompt = _captured_prompt(client)
+        assert "Evil Angel" in prompt
+        assert "Studio/site: Evil Angel" in prompt
+        assert "Brazzers" not in prompt  # logo_studio suppressed by confirmed studio
+        assert "low confidence" not in prompt.lower()
 
 
 # ── analyze_filename results ──────────────────────────────────────────────────

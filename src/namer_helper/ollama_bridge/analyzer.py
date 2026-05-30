@@ -96,11 +96,13 @@ def analyze_filename(
 
     # Build context block from all known signals
     ctx_lines: list[str] = []
-    eff_studio = studio or logo_studio
     if performers:
         ctx_lines.append(f"Known performers: {', '.join(performers)}")
-    if eff_studio:
-        ctx_lines.append(f"Studio/site: {eff_studio}")
+    if studio:
+        ctx_lines.append(f"Studio/site: {studio}")
+    elif logo_studio:
+        # moondream vision output — unverified, may hallucinate
+        ctx_lines.append(f"Possible studio (logo detection, low confidence): {logo_studio}")
     if date:
         ctx_lines.append(f"Date: {date}")
     if duration:
