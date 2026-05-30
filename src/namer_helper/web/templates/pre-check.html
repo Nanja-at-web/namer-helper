@@ -671,13 +671,11 @@ function renderScanStatus(scan) {
       ? `✗ Scanfehler: ${escHtml(scan.error || 'unbekannt')}`
       : scan.status === 'paused'
         ? `Pausiert · ${done} / ${total}`
-        : scan.status === 'stop_requested'
-          ? `Stop wird nach aktueller Datei ausgeführt${activeText}`
-          : scan.status === 'stopped'
-            ? `Gestoppt · ${done} / ${total}`
-            : scan.status === 'pause_requested'
-              ? `Pause wird nach aktueller Datei ausgeführt${activeText}`
-              : `Server-Scan läuft${activeText}`;
+        : scan.status === 'stopped'
+          ? `Gestoppt · ${done} / ${total}`
+          : scan.status === 'pause_requested'
+            ? `Pause wird nach aktueller Datei ausgeführt${activeText}`
+            : `Server-Scan läuft${activeText}`;
   document.getElementById('bulk-progress-bar').style.width = pct + '%';
   document.getElementById('bulk-progress-count').textContent = `${done} / ${total}`;
   document.getElementById('bulk-progress-label').innerHTML = label;
@@ -729,6 +727,7 @@ async function resumeScan() {
 }
 
 async function stopScan() {
+  if (!confirm('Scan wirklich sofort stoppen?')) return;
   const res = await fetch('/pre-check/scan/stop', {method: 'POST'});
   const json = await res.json();
   if (json.ok) renderScanStatus(json.scan);

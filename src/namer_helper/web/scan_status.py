@@ -86,6 +86,7 @@ def mark_done(
     state = load()
     if state.get("scan_id") != scan_id:
         return
+    scan_status = state.get("status")
     done = 0
     for item in state.get("items", []):
         if item.get("name") == name:
@@ -99,6 +100,7 @@ def mark_done(
             done += 1
     state["done"] = done
     state["current"] = None
+    state["status"] = scan_status
     state["updated_at"] = _now()
     save(state)
 
@@ -153,15 +155,11 @@ def stop(scan_id: str | None = None) -> dict[str, Any]:
     state = load()
     if scan_id and state.get("scan_id") != scan_id:
         return state
-    if state.get("status") == "paused":
+    if state.get("active") or state.get("status") in {"paused", "pause_requested", "stop_requested"}:
         state["active"] = False
         state["status"] = "stopped"
         state["current"] = None
         state["finished_at"] = _now()
-        state["updated_at"] = _now()
-        save(state)
-    elif state.get("active") or state.get("status") == "pause_requested":
-        state["status"] = "stop_requested"
         state["updated_at"] = _now()
         save(state)
     return state

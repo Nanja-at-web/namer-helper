@@ -42,6 +42,7 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _SERVICE = "namer-watchdog"
 _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_SCAN_ITEM_TIMEOUT_SECONDS = 600
 
 
 def _is_ignored_file(path: Path) -> bool:
@@ -1226,14 +1227,31 @@ def create_app(
                 state = scan_status.load()
                 if state.get("scan_id") != scan_id:
                     return
-                if state.get("status") == "stop_requested":
-                    scan_status.set_stopped(scan_id)
+                if state.get("status") not in {"running", "pause_requested"}:
                     return
                 if state.get("status") == "pause_requested":
                     scan_status.set_paused(scan_id)
                     return
                 scan_status.mark_running(scan_id, name)
-                result = await pre_check_lookup(name)
+                try:
+                    result = await asyncio.wait_for(
+                        pre_check_lookup(name),
+                        timeout=_SCAN_ITEM_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    result = {
+                        "ok": False,
+                        "error": f"Lookup-Timeout nach {_SCAN_ITEM_TIMEOUT_SECONDS}s",
+                        "identification": {
+                            "status": "unknown",
+                            "confidence": 0.0,
+                            "source": "none",
+                            "reason": "Lookup-Timeout",
+                            "suggested_name": None,
+                            "action": "review",
+                            "signals": [],
+                        },
+                    }
                 scan_status.mark_done(
                     scan_id,
                     name,

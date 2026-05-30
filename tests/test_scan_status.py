@@ -48,8 +48,8 @@ def test_scan_status_pause_resume_stop(tmp_path, monkeypatch):
     assert resumed["status"] == "running"
 
     stopped = scan_status.stop(scan_id)
-    assert stopped["status"] == "stop_requested"
-    scan_status.set_stopped(scan_id)
+    assert stopped["active"] is False
+    assert stopped["status"] == "stopped"
     final = scan_status.load()
     assert final["active"] is False
     assert final["status"] == "stopped"
