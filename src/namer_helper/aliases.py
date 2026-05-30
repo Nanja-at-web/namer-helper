@@ -68,7 +68,13 @@ def resolve_studio(token: str, aliases: Aliases) -> str:
 
 
 def resolve_performer(token: str, aliases: Aliases) -> str:
-    """Return the full performer name for a token, or the token unchanged."""
+    """Return the full performer name for a token, or the token unchanged.
+
+    Designed for abbreviations and initials only — tokens like "JD" that a
+    language model cannot resolve on its own.  Full names written with
+    separators (e.g. "jane_doe") are NOT looked up here; filename_parser
+    normalises those via separator stripping before the LLM sees them.
+    """
     return aliases.performers.get(token.upper(), token)
 
 

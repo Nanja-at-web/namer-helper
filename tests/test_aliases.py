@@ -152,10 +152,26 @@ class TestFilenameParserIntegration:
         info = parse_filename("EA - 2023-05-01 - Some Scene.mp4")
         assert info.studio == "EA"  # not resolved without aliases
 
-    def test_performer_abbreviation_resolved(self):
+    def test_performer_initial_resolved(self):
+        # Performer aliases are for INITIALS/ABBREVIATIONS only.
+        # #JD → token "JD" → alias lookup → "Jane Doe"
         info = parse_filename("Studio @studio #JD.2023.mp4", self.aliases)
-        # #JD hashtag → performer "JD" → resolved to "Jane Doe"
         assert "Jane Doe" in info.performers
+
+    def test_full_name_token_not_in_alias_table(self):
+        # #jane_doe → token "jane_doe" → upper() = "JANE_DOE" → no alias match.
+        # This is intentional: full names are handled by separator normalisation
+        # (underscore → space → "jane doe"), not by alias lookup.
+        # The LLM recognises "jane doe"; it cannot recognise "JD".
+        aliases_with_full = Aliases(
+            studios={},
+            performers={"JD": "Jane Doe"},
+        )
+        info = parse_filename("Studio.#jane_doe.2023.mp4", aliases_with_full)
+        # Token "jane_doe" does NOT match alias key "JD" — returned as-is
+        assert "jane_doe" in info.performers or not any(
+            p == "Jane Doe" for p in info.performers
+        )
 
     def test_unknown_studio_unchanged(self):
         info = parse_filename("UNKNOWNST - 2023-05-01 - Scene.mp4", self.aliases)
