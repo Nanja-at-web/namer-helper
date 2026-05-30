@@ -1209,6 +1209,15 @@ def create_app(
 
         try:
             for name in names:
+                state = scan_status.load()
+                if state.get("scan_id") != scan_id:
+                    return
+                if state.get("status") == "stop_requested":
+                    scan_status.set_stopped(scan_id)
+                    return
+                if state.get("status") == "pause_requested":
+                    scan_status.set_paused(scan_id)
+                    return
                 scan_status.mark_running(scan_id, name)
                 result = await pre_check_lookup(name)
                 scan_status.mark_done(
@@ -1217,6 +1226,7 @@ def create_app(
                     ok=bool(result.get("ok")),
                     error=result.get("error"),
                     identification=result.get("identification"),
+                    result=result,
                 )
             scan_status.finish(scan_id)
         except Exception as exc:
@@ -1234,11 +1244,33 @@ def create_app(
         if not clean_names:
             return {"ok": False, "error": "Keine Dateien ausgewählt"}
         current = scan_status.load()
-        if current.get("active"):
+        if current.get("active") or current.get("status") in {"paused", "pause_requested"}:
             return {"ok": False, "error": "Ein Scan läuft bereits", "scan": current}
         state = scan_status.start(clean_names)
         asyncio.create_task(_run_pre_check_scan(state["scan_id"], clean_names))
         return {"ok": True, "scan": state}
+
+    @app.post("/pre-check/scan/pause")
+    async def pre_check_scan_pause():
+        from namer_helper.web import scan_status
+
+        return {"ok": True, "scan": scan_status.pause()}
+
+    @app.post("/pre-check/scan/resume")
+    async def pre_check_scan_resume():
+        from namer_helper.web import scan_status
+
+        state = scan_status.resume()
+        names = scan_status.pending_names(state)
+        if names and state.get("scan_id"):
+            asyncio.create_task(_run_pre_check_scan(state["scan_id"], names))
+        return {"ok": True, "scan": scan_status.load()}
+
+    @app.post("/pre-check/scan/stop")
+    async def pre_check_scan_stop():
+        from namer_helper.web import scan_status
+
+        return {"ok": True, "scan": scan_status.stop()}
 
     @app.get("/pre-check/scan/status")
     async def pre_check_scan_status():

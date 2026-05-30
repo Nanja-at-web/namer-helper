@@ -81,6 +81,7 @@ def mark_done(
     ok: bool,
     error: str | None = None,
     identification: dict[str, Any] | None = None,
+    result: dict[str, Any] | None = None,
 ) -> None:
     state = load()
     if state.get("scan_id") != scan_id:
@@ -92,6 +93,7 @@ def mark_done(
             item["ok"] = ok
             item["error"] = error
             item["identification"] = identification or None
+            item["result"] = result or None
             item["updated_at"] = _now()
         if item.get("status") in {"done", "error"}:
             done += 1
@@ -124,3 +126,73 @@ def fail(scan_id: str, error: str) -> None:
     state["finished_at"] = _now()
     state["updated_at"] = _now()
     save(state)
+
+
+def pause(scan_id: str | None = None) -> dict[str, Any]:
+    state = load()
+    if scan_id and state.get("scan_id") != scan_id:
+        return state
+    if state.get("active"):
+        state["status"] = "pause_requested"
+        state["updated_at"] = _now()
+        save(state)
+    return state
+
+
+def resume() -> dict[str, Any]:
+    state = load()
+    if state.get("status") in {"paused", "pause_requested"}:
+        state["active"] = True
+        state["status"] = "running"
+        state["updated_at"] = _now()
+        save(state)
+    return state
+
+
+def stop(scan_id: str | None = None) -> dict[str, Any]:
+    state = load()
+    if scan_id and state.get("scan_id") != scan_id:
+        return state
+    if state.get("status") == "paused":
+        state["active"] = False
+        state["status"] = "stopped"
+        state["current"] = None
+        state["finished_at"] = _now()
+        state["updated_at"] = _now()
+        save(state)
+    elif state.get("active") or state.get("status") == "pause_requested":
+        state["status"] = "stop_requested"
+        state["updated_at"] = _now()
+        save(state)
+    return state
+
+
+def set_paused(scan_id: str) -> None:
+    state = load()
+    if state.get("scan_id") != scan_id:
+        return
+    state["active"] = False
+    state["status"] = "paused"
+    state["current"] = None
+    state["updated_at"] = _now()
+    save(state)
+
+
+def set_stopped(scan_id: str) -> None:
+    state = load()
+    if state.get("scan_id") != scan_id:
+        return
+    state["active"] = False
+    state["status"] = "stopped"
+    state["current"] = None
+    state["finished_at"] = _now()
+    state["updated_at"] = _now()
+    save(state)
+
+
+def pending_names(state: dict[str, Any]) -> list[str]:
+    return [
+        item.get("name", "")
+        for item in state.get("items", [])
+        if item.get("name") and item.get("status") in {"pending", "running"}
+    ]

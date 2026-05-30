@@ -47,6 +47,11 @@
   <div class="w-full bg-purple-100 rounded-full h-2">
     <div id="bulk-progress-bar" class="bg-purple-600 h-2 rounded-full transition-all duration-300" style="width:0%"></div>
   </div>
+  <div class="flex justify-end gap-2 mt-2">
+    <button id="scan-pause-btn" onclick="pauseScan()" class="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Pause</button>
+    <button id="scan-resume-btn" onclick="resumeScan()" class="hidden text-xs px-2 py-1 rounded bg-green-100 hover:bg-green-200 text-green-800">Weiter</button>
+    <button id="scan-stop-btn" onclick="stopScan()" class="text-xs px-2 py-1 rounded bg-red-100 hover:bg-red-200 text-red-800">Stop</button>
+  </div>
 </div>
 
 {% if files %}
@@ -287,7 +292,7 @@ async function lookupSelected() {
   document.getElementById('bulk-progress').classList.remove('hidden');
   document.getElementById('action-msg').classList.add('hidden');
 
-  const names = selected.map(cb => decodeURIComponent(cb.dataset.encoded || ''));
+  const names = selected.map(cb => cb.dataset.encoded || '');
   const res = await fetch('/pre-check/scan/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -316,11 +321,16 @@ async function doLookup(encodedName, rowIndex) {
 }
 
 async function runLookup(encodedName, rowIndex) {
-  const panel = document.getElementById('lookup-' + rowIndex);
-  const content = panel.querySelector('.lookup-content');
-
   const res = await fetch('/pre-check/lookup?name=' + encodedName, {method: 'POST'});
   const json = await res.json();
+  renderLookupResult(json, encodedName, rowIndex);
+}
+
+function renderLookupResult(json, encodedName, rowIndex) {
+  const panel = document.getElementById('lookup-' + rowIndex);
+  if (!panel) return;
+  const content = panel.querySelector('.lookup-content');
+  if (!content) return;
 
   let html = '';
 
@@ -630,13 +640,70 @@ function renderScanStatus(scan) {
     ? `✓ ${total} Dateien geprüft.`
     : scan.status === 'error'
       ? `✗ Scanfehler: ${escHtml(scan.error || 'unbekannt')}`
-      : `Server-Scan läuft${activeText}`;
+      : scan.status === 'paused'
+        ? `Pausiert · ${done} / ${total}`
+        : scan.status === 'stop_requested'
+          ? `Stop wird nach aktueller Datei ausgeführt${activeText}`
+          : scan.status === 'stopped'
+            ? `Gestoppt · ${done} / ${total}`
+            : scan.status === 'pause_requested'
+              ? `Pause wird nach aktueller Datei ausgeführt${activeText}`
+              : `Server-Scan läuft${activeText}`;
   document.getElementById('bulk-progress-bar').style.width = pct + '%';
   document.getElementById('bulk-progress-count').textContent = `${done} / ${total}`;
   document.getElementById('bulk-progress-label').innerHTML = label;
+  const pauseBtn = document.getElementById('scan-pause-btn');
+  const resumeBtn = document.getElementById('scan-resume-btn');
+  const stopBtn = document.getElementById('scan-stop-btn');
+  if (pauseBtn) pauseBtn.classList.toggle('hidden', !scan.active || scan.status !== 'running');
+  if (resumeBtn) resumeBtn.classList.toggle('hidden', scan.status !== 'paused');
+  if (stopBtn) stopBtn.classList.toggle('hidden', ['finished', 'stopped', 'error'].includes(scan.status));
+  renderCompletedScanItems(scan);
   if (!scan.active && scan.status === 'finished') {
     setTimeout(() => document.getElementById('bulk-progress').classList.add('hidden'), 5000);
   }
+}
+
+function rowForScanName(name) {
+  const rows = Array.from(document.querySelectorAll('#file-table tr[data-encoded]'));
+  return rows.find(row => {
+    try { return decodeURIComponent(row.dataset.encoded || '') === name; }
+    catch (e) { return false; }
+  });
+}
+
+function renderCompletedScanItems(scan) {
+  (scan.items || []).forEach(item => {
+    if (!item || item.status !== 'done' || !item.result) return;
+    const row = rowForScanName(item.name);
+    if (!row || row.dataset.scanRendered === '1') return;
+    const rowIndex = row.id.replace('row-', '');
+    const panel = document.getElementById('lookup-' + rowIndex);
+    if (panel) panel.classList.remove('hidden');
+    renderLookupResult(item.result, row.dataset.encoded || encodeURIComponent(item.name), rowIndex);
+    row.dataset.scanRendered = '1';
+  });
+}
+
+async function pauseScan() {
+  const res = await fetch('/pre-check/scan/pause', {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) renderScanStatus(json.scan);
+  pollScanStatus();
+}
+
+async function resumeScan() {
+  const res = await fetch('/pre-check/scan/resume', {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) renderScanStatus(json.scan);
+  pollScanStatus();
+}
+
+async function stopScan() {
+  const res = await fetch('/pre-check/scan/stop', {method: 'POST'});
+  const json = await res.json();
+  if (json.ok) renderScanStatus(json.scan);
+  pollScanStatus();
 }
 
 async function pollScanStatus() {
@@ -646,7 +713,7 @@ async function pollScanStatus() {
     const json = await res.json();
     if (json.ok) {
       renderScanStatus(json.scan);
-      if (json.scan && json.scan.active) {
+      if (json.scan && (json.scan.active || ['paused', 'pause_requested', 'stop_requested'].includes(json.scan.status))) {
         scanPollTimer = setTimeout(pollScanStatus, 2000);
       }
     }
