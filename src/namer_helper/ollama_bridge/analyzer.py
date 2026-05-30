@@ -1,8 +1,9 @@
 """
 Filename analysis via Ollama.
 
-Cleans a raw filename, builds a structured prompt, parses the JSON response
-into an OllamaResult. Ollama is always advisory — no automatic actions.
+Normalises the raw filename (leet, noise, unicode) via normalize(), then
+builds a structured prompt and parses the JSON response into an OllamaResult.
+Ollama is always advisory — no automatic actions.
 """
 
 from __future__ import annotations
@@ -12,25 +13,15 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from namer_helper.normalize import normalize
 from namer_helper.ollama_bridge.client import OllamaClient, OllamaError
 
-
-_STRIP_RE = re.compile(
-    r"""
-    \.(?:mp4|mkv|avi|mov|flv|wmv|m4v)$   # extension
-    | \b(?:720p|1080p|2160p|4k|480p)\b    # resolution
-    | \b(?:x264|x265|hevc|h264|xvid)\b    # codec
-    | \b(?:bluray|bdrip|webrip|webdl|hdtv|dvdrip)\b  # source
-    | \b(?:aac|mp3|ac3|dts)\b             # audio
-    | [-_.]+                              # separators → spaces
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
 
 _PROMPT_TEMPLATE = """\
 You are a media file metadata assistant. Identify the scene title and return ONLY a JSON object — no explanation, no markdown, just the JSON.
 
-Filename: {filename}
+Original filename: {filename}
+Cleaned filename:  {cleaned}
 {context_block}
 Return exactly this structure:
 {{
@@ -63,26 +54,19 @@ class OllamaResult:
     error: str | None = None
 
 
-def _clean_filename(filename: str) -> str:
-    stem = Path(filename).stem
-    cleaned = _STRIP_RE.sub(" ", stem)
-    cleaned = re.sub(r" {2,}", " ", cleaned).strip()
-    return cleaned
-
-
-def _parse_response(raw: str, filename: str) -> OllamaResult:
+def _parse_response(raw: str, filename: str, cleaned: str) -> OllamaResult:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return OllamaResult(
             filename=filename,
-            cleaned_name=_clean_filename(filename),
+            cleaned_name=cleaned,
             error=f"JSON parse error: {raw[:200]}",
         )
 
     return OllamaResult(
         filename=filename,
-        cleaned_name=data.get("cleaned_name", _clean_filename(filename)),
+        cleaned_name=data.get("cleaned_name", cleaned),
         search_queries=data.get("search_queries", []),
         confidence=float(data.get("confidence", 0.0)),
         recommended_action=data.get("recommended_action", "manual_review"),
@@ -103,11 +87,12 @@ def analyze_filename(
 ) -> OllamaResult:
     """Analyze a filename via Ollama with all available context signals.
 
-    Passes performers/studio/date/duration so Ollama can build a meaningful
-    suggestion even when the filename itself is a tag list or garbage.
+    Normalises the filename (leet, noise, unicode) before sending to the LLM,
+    so the model receives a clean input even for heavily obfuscated filenames.
     Never raises — errors land in result.error.
     """
-    cleaned = _clean_filename(filename)
+    norm = normalize(filename)
+    cleaned = norm.normalized
 
     # Build context block from all known signals
     ctx_lines: list[str] = []
@@ -128,6 +113,7 @@ def analyze_filename(
 
     prompt = _PROMPT_TEMPLATE.format(
         filename=filename,
+        cleaned=cleaned,
         context_block=context_block,
     )
 
@@ -140,7 +126,7 @@ def analyze_filename(
             error=str(exc),
         )
 
-    return _parse_response(raw, filename)
+    return _parse_response(raw, filename, cleaned)
 
 
 def analyze_filenames(
