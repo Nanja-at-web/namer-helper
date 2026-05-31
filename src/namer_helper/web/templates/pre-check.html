@@ -151,12 +151,18 @@
     </thead>
     <tbody class="divide-y divide-gray-100" id="file-table">
       {% for f in files %}
-      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}" data-cached="{{ 1 if f.lookup_cached else 0 }}">
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-basename="{{ f.basename | lower }}" data-folder="{{ f.folder }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}" data-cached="{{ 1 if f.lookup_cached else 0 }}" data-filter-visible="1">
         <td class="px-4 py-3">
           <input type="checkbox" class="file-cb rounded border-gray-300"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
         </td>
-        <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">{{ f.name }}</td>
+        <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">
+          {% if f.folder %}
+          <span class="text-gray-400">{{ f.folder }}/</span>{{ f.basename }}
+          {% else %}
+          {{ f.basename }}
+          {% endif %}
+        </td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">{{ f.size_mb }} MB</td>
         <td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap font-mono" id="duration-{{ loop.index }}">{{ f.duration_hms if f.duration_cached else '…' }}</td>
         <td class="px-4 py-3 text-center whitespace-nowrap" id="processed-{{ loop.index }}">
@@ -217,11 +223,46 @@ function showMsg(text, ok) {
   el.classList.remove('hidden');
 }
 
+const collapsedFolders = new Set();
+
+function folderKey(folder) {
+  return btoa(unescape(encodeURIComponent(folder || '')));
+}
+
+function folderRows(folder) {
+  return Array.from(document.querySelectorAll('#file-table tr[data-name]'))
+    .filter(row => (row.dataset.folder || '') === folder);
+}
+
+function toggleFolder(folder) {
+  const key = folderKey(folder);
+  if (collapsedFolders.has(folder)) collapsedFolders.delete(folder);
+  else collapsedFolders.add(folder);
+  applyFilterSort();
+  const folderRow = document.querySelector(`tr[data-folder-row="${key}"]`);
+  if (folderRow) folderRow.scrollIntoView({block: 'nearest'});
+}
+
+function toggleFolderSelection(folder, checked) {
+  folderRows(folder).forEach(row => {
+    if (row.dataset.filterVisible !== '1') return;
+    const cb = row.querySelector('.file-cb');
+    if (cb) cb.checked = checked;
+  });
+}
+
+function initializeFolderState() {
+  document.querySelectorAll('#file-table tr[data-folder]').forEach(row => {
+    const folder = row.dataset.folder || '';
+    if (folder) collapsedFolders.add(folder);
+  });
+}
+
 function toggleAll(checked) {
-  // Only toggle visible rows (respects active filter)
+  // Toggle filtered rows, including files hidden by a collapsed folder.
   document.querySelectorAll('.file-cb').forEach(cb => {
     const row = document.getElementById('row-' + cb.dataset.row);
-    if (row && !row.classList.contains('hidden')) cb.checked = checked;
+    if (row && row.dataset.filterVisible === '1') cb.checked = checked;
   });
 }
 
@@ -334,10 +375,10 @@ function confirmDelete(encodedName, rowIndex, name) {
 }
 
 async function lookupSelected() {
-  // Only process visible (non-filtered-out) checked rows
+  // Only process filtered-in checked rows, also when their folder is collapsed.
   const selected = [...document.querySelectorAll('.file-cb:checked')].filter(cb => {
     const row = document.getElementById('row-' + cb.dataset.row);
-    return row && !row.classList.contains('hidden');
+    return row && row.dataset.filterVisible === '1';
   });
   if (!selected.length) { showMsg('Keine Dateien ausgewählt.', false); return; }
 
@@ -936,6 +977,10 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function escJs(str) {
+  return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 // ── Sortierung + Filter ──
 let sortCol = null;   // 'name' | 'size' | 'duration' | 'processed'
 let sortAsc = true;
@@ -967,6 +1012,7 @@ function applyFilterSort() {
   const processedFilter = document.getElementById('processed-filter').value;
 
   const tbody = document.getElementById('file-table');
+  tbody.querySelectorAll('tr[data-folder-row]').forEach(row => row.remove());
   const pairs = [];
   tbody.querySelectorAll('tr[data-name]').forEach(row => {
     const panel = document.getElementById('lookup-' + row.id.replace('row-', ''));
@@ -1007,6 +1053,8 @@ function applyFilterSort() {
   const rowMatches = row => (!q || row.dataset.name.includes(q)) && sizeMatch(row) && durationMatch(row) && processedMatch(row);
   const filtered = pairs.filter(({ row }) => rowMatches(row));
   const hidden = pairs.filter(({ row }) => !rowMatches(row));
+  pairs.forEach(({ row }) => { row.dataset.filterVisible = '0'; });
+  filtered.forEach(({ row }) => { row.dataset.filterVisible = '1'; });
 
   // Sort
   if (sortCol) {
@@ -1029,17 +1077,68 @@ function applyFilterSort() {
     });
   }
 
-  // Re-order DOM
-  filtered.forEach(({ row, panel }) => {
-    tbody.appendChild(row);
-    if (panel) tbody.appendChild(panel);
+  function makeFolderRow(folder, group) {
+    const totalBytes = group.reduce((sum, item) => sum + parseFloat(item.row.dataset.size || '0'), 0);
+    const totalMb = Math.round(totalBytes / 104857.6) / 10;
+    const done = group.filter(item => item.row.dataset.processed === '1').length;
+    const cached = group.filter(item => item.row.dataset.cached === '1').length;
+    const selected = group.filter(item => item.row.querySelector('.file-cb')?.checked).length;
+    const expanded = !collapsedFolders.has(folder);
+    const key = folderKey(folder);
+    const tr = document.createElement('tr');
+    tr.dataset.folderRow = key;
+    tr.className = 'bg-slate-50 hover:bg-slate-100 border-t border-slate-200';
+    tr.innerHTML = `
+      <td class="px-4 py-2">
+        <input type="checkbox" class="rounded border-gray-300"
+          ${selected && selected === group.length ? 'checked' : ''}
+          onchange="toggleFolderSelection('${escJs(folder)}', this.checked)">
+      </td>
+      <td class="px-4 py-2">
+        <button type="button" onclick="toggleFolder('${escJs(folder)}')"
+          class="flex items-center gap-2 text-left w-full text-slate-700 hover:text-slate-900">
+          <span class="text-xs text-slate-400 w-4">${expanded ? '▾' : '▸'}</span>
+          <span class="font-semibold">${escHtml(folder)}</span>
+          <span class="text-xs text-slate-400">${group.length} Dateien</span>
+        </button>
+      </td>
+      <td class="px-4 py-2 text-right text-slate-400 whitespace-nowrap">${totalMb} MB</td>
+      <td class="px-4 py-2 text-right text-slate-300 whitespace-nowrap">—</td>
+      <td class="px-4 py-2 text-center whitespace-nowrap">
+        <span class="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">${done}/${group.length} bearbeitet</span>
+        ${cached ? `<span class="ml-1 inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">${cached} cached</span>` : ''}
+      </td>
+      <td class="px-4 py-2 text-right whitespace-nowrap">
+        <button type="button" onclick="toggleFolder('${escJs(folder)}')" class="text-xs px-3 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">${expanded ? 'Einklappen' : 'Öffnen'}</button>
+      </td>
+    `;
+    return tr;
+  }
+
+  // Re-order DOM, grouped by folder like a compact explorer view.
+  const grouped = new Map();
+  filtered.forEach(item => {
+    const folder = item.row.dataset.folder || '';
+    if (!grouped.has(folder)) grouped.set(folder, []);
+    grouped.get(folder).push(item);
+  });
+  grouped.forEach((group, folder) => {
+    if (folder) tbody.appendChild(makeFolderRow(folder, group));
+    const collapsed = folder && collapsedFolders.has(folder);
+    group.forEach(({ row, panel }) => {
+      tbody.appendChild(row);
+      if (panel) tbody.appendChild(panel);
+      row.classList.toggle('hidden', !!collapsed);
+      if (panel && collapsed) panel.classList.add('hidden');
+    });
   });
   hidden.forEach(({ row, panel }) => {
     row.classList.add('hidden');
     if (panel) panel.classList.add('hidden');
   });
   filtered.forEach(({ row, panel }) => {
-    row.classList.remove('hidden');
+    const folder = row.dataset.folder || '';
+    if (!folder || !collapsedFolders.has(folder)) row.classList.remove('hidden');
   });
 
   // Update sort icons
@@ -1092,6 +1191,7 @@ async function loadDurations() {
 
 // Init counter on load
 document.addEventListener('DOMContentLoaded', () => {
+  initializeFolderState();
   applyFilterSort();
   loadDurations();
   pollScanStatus();

@@ -403,7 +403,8 @@ class TestPreCheckRename:
                         video = c.get("/pre-check/video", params={"name": "Studio/Nested.mp4"})
 
         assert page.status_code == 200
-        assert "Studio/Nested.mp4" in page.text
+        assert 'data-folder="Studio"' in page.text
+        assert "Nested.mp4" in page.text
         assert "Studio%2FNested.mp4" in page.text
         assert video.status_code == 200
 

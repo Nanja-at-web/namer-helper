@@ -894,8 +894,12 @@ def create_app(
             except Exception:
                 lookup_cached = False
             rel_name = _pre_check_relative_name(pre_dir, f)
+            parent = str(Path(rel_name).parent)
+            folder = "" if parent == "." else parent
             items.append({
                 "name": rel_name,
+                "basename": f.name,
+                "folder": folder,
                 "name_encoded": quote(rel_name, safe=""),
                 "size_mb": size_mb,
                 "size_bytes": size_bytes,
