@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import struct
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -174,3 +175,19 @@ class TestExtractFrameText:
         with patch("namer_helper.namer_bridge.hasher.subprocess.run", mock_run):
             result = extract_frame_text(f, duration=60)
         assert isinstance(result, str)
+
+    def test_returns_empty_string_on_tesseract_timeout(self, tmp_path):
+        f = _make_video_file(tmp_path)
+
+        def fake_run(cmd, *args, **kwargs):
+            if cmd[0] == "ffmpeg":
+                Path(cmd[-1]).write_bytes(b"not-a-real-image")
+                result = MagicMock()
+                result.returncode = 0
+                return result
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 3))
+
+        with patch("namer_helper.namer_bridge.hasher.subprocess.run", side_effect=fake_run):
+            result = extract_frame_text(f, duration=60)
+
+        assert result == ""

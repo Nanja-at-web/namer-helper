@@ -141,7 +141,7 @@ def extract_frame_text(path: Path, timestamps: list[int] | None = None, duration
 
     try:
         return _extract_frame_text_inner(path, timestamps, duration)
-    except (FileNotFoundError, OSError):
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -219,11 +219,14 @@ def _extract_frame_text_inner(path: Path, timestamps: list[int] | None, duration
                 if time.monotonic() > deadline:
                     break
                 remaining = max(3, int(deadline - time.monotonic()))
-                ocr = subprocess.run(
-                    ["tesseract", proc, "stdout", "--psm", psm, "--oem", "3",
-                     "-l", "eng", "tsv"],
-                    capture_output=True, text=True, timeout=remaining,
-                )
+                try:
+                    ocr = subprocess.run(
+                        ["tesseract", proc, "stdout", "--psm", psm, "--oem", "3",
+                         "-l", "eng", "tsv"],
+                        capture_output=True, text=True, timeout=remaining,
+                    )
+                except subprocess.TimeoutExpired:
+                    continue
                 if ocr.returncode != 0:
                     continue
                 collected.extend(_tsv_lines(ocr.stdout))
