@@ -36,7 +36,7 @@ _SERVICE = "namer-watchdog"
 _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
-_SINGLE_LOOKUP_TIMEOUT_SECONDS = 120   # single /pre-check/lookup via browser
+_SINGLE_LOOKUP_TIMEOUT_SECONDS = 600   # keep browser lookup aligned with server-scan per-file timeout
 _NON_TEXT_OLLAMA_MODELS = ("all-minilm", "mxbai-embed", "nomic-embed", "moondream")
 
 
