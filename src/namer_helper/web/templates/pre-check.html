@@ -1115,6 +1115,30 @@ function applyFilterSort() {
     return tr;
   }
 
+  function groupStats(group) {
+    const totalBytes = group.reduce((sum, item) => sum + parseFloat(item.row.dataset.size || '0'), 0);
+    const done = group.filter(item => item.row.dataset.processed === '1').length;
+    const cached = group.filter(item => item.row.dataset.cached === '1').length;
+    const loadedDurations = group
+      .filter(item => item.row.dataset.durationLoaded === '1')
+      .map(item => parseFloat(item.row.dataset.duration || '0'))
+      .filter(value => !Number.isNaN(value) && value > 0);
+    return {
+      totalBytes,
+      done,
+      cached,
+      count: group.length,
+      doneRatio: group.length ? done / group.length : 0,
+      maxDuration: loadedDurations.length ? Math.max(...loadedDurations) : Number.POSITIVE_INFINITY,
+    };
+  }
+
+  function compareValues(va, vb) {
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  }
+
   // Re-order DOM, grouped by folder like a compact explorer view.
   const grouped = new Map();
   filtered.forEach(item => {
@@ -1122,7 +1146,28 @@ function applyFilterSort() {
     if (!grouped.has(folder)) grouped.set(folder, []);
     grouped.get(folder).push(item);
   });
-  grouped.forEach((group, folder) => {
+  const groupEntries = Array.from(grouped.entries());
+  if (sortCol) {
+    groupEntries.sort(([folderA, groupA], [folderB, groupB]) => {
+      const a = groupStats(groupA);
+      const b = groupStats(groupB);
+      if (sortCol === 'size') {
+        return compareValues(a.totalBytes, b.totalBytes) || compareValues(folderA, folderB);
+      }
+      if (sortCol === 'duration') {
+        return compareValues(a.maxDuration, b.maxDuration) || compareValues(folderA, folderB);
+      }
+      if (sortCol === 'processed') {
+        return compareValues(a.doneRatio, b.doneRatio)
+          || compareValues(a.done, b.done)
+          || compareValues(a.cached, b.cached)
+          || compareValues(a.count, b.count)
+          || compareValues(folderA, folderB);
+      }
+      return compareValues(folderA || groupA[0]?.row.dataset.name || '', folderB || groupB[0]?.row.dataset.name || '');
+    });
+  }
+  groupEntries.forEach(([folder, group]) => {
     if (folder) tbody.appendChild(makeFolderRow(folder, group));
     const collapsed = folder && collapsedFolders.has(folder);
     group.forEach(({ row, panel }) => {
