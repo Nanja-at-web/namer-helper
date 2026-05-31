@@ -75,12 +75,11 @@ namer-helper/
 └── pyproject.toml                     # hatchling, click/fastapi/loguru/requests/jinja2
 ```
 
-**Bestätigte FEHLENDE Dateien:**
+**Bestätigte FEHLENDE/OPTIONALE Dateien:**
 
 ```
-config/rules.yaml           # MVP 4: Rule Learning – noch nicht erstellt
-tests/test_analyzer.py      # fehlt (README behauptet "33 Tests" – aspirational)
-tests/test_stash_client.py  # fehlt
+src/namer_helper/training/  # Phase 4 / C2 Trainingsdaten-Generator – noch nicht erstellt
+modelfiles/                 # Phase 4 / C1 Ollama-Modelfile – noch nicht erstellt
 docker/docker-compose.yml   # docker-compose.yml ist im ROOT, nicht in docker/
 ```
 
@@ -244,12 +243,12 @@ Nachprüfung fehlt (MVP 6)
 Review-Queue fehlt (MVP 7)
   → keine manuelle Entscheidungsschnittstelle
 
-Rule Learning fehlt (MVP 4)
-  → config/rules.yaml nicht vorhanden
+Rule Learning (MVP 4)
+  → implementiert: /etc/namer-helper/rules.yaml wird beim bestätigten Rename gelernt
 
-Tests unvollständig
-  → test_log_parser.py vorhanden (5 Tests), alle anderen fehlen
-  → README erwähnt "33 Tests" – aspirational, nicht aktuell
+Tests
+  → 334 Tests vorhanden (Stand 2026-05-31), inkl. filename_parser, normalize, hasher,
+    StashDB, ThePornDB, Rule Learning und Identification-Pfade
 ```
 
 -----
@@ -557,8 +556,8 @@ POST     /work/clear             → work/ leeren (→ watch/)
 MVP 1: Failed-Match-Review     ✓ main + branch
 MVP 2: Ollama Assist           ✓ main + branch (branch: erweitert mit Kontext)
 MVP 3: Stash Bridge (lokal)    ✓ main + branch
-MVP 4: Rule Learning           ✗ nicht implementiert (config/rules.yaml fehlt)
-MVP 5: Pre-Check               ✓ branch (backup/precheck-ai-proxmox-20260529)
+MVP 4: Rule Learning           ✓ stable/precheck (oshash → bestätigter Zielname)
+MVP 5: Pre-Check               ✓ stable/precheck
 MVP 6: Post-Check              ✓ branch (als Teil der Pre-Check-Pipeline)
 MVP 7: Review-Queue            ⚠️  branch (Pre-Check UI = manuelle Review, keine Queue)
 MVP 8: StashDB cloud           ✓ branch (fingerprint + context + submit)
@@ -719,10 +718,12 @@ Alles Wertvolle steckt im Branch der `backup/` heißt.
 
 ```
 "33 Tests, alle Komponenten abgedeckt."
-Tatsächlich: 1 Testdatei, 5 Tests, nur log_parser.
+Historischer Befund: damals 1 Testdatei, 5 Tests, nur log_parser.
+Aktueller Stand stable/precheck: 334 Tests.
 ```
 
-Kein einziger Test für Analyzer, StashDB-Client, TPDB-Client, Pre-Check-Pipeline.
+Analyzer, StashDB, TPDB, Pre-Check/Identification, Rules, Hasher und Parser
+sind inzwischen testabgedeckt.
 
 **P4 – Zwei Config-Systeme für dieselben Werte** `[HOCH]`
 
@@ -812,7 +813,7 @@ Phase 0 – Sofort: Branch nutzbar machen (Woche 1)
 ────────────────────────────────────────────────────────────────
   0.1  precheck-Branch in main mergen (oder als stable Branch taggen)
        → Ohne das ist alles andere wertlos
-  0.2  README korrigieren ("33 Tests" → tatsächlichen Stand)
+  0.2  README korrigieren ("33 Tests" → tatsächlichen Stand)  ✓ erledigt
   0.3  pyproject.toml: ffmpeg + tesseract als optionale Hinweise
        + Startup-Check: warnen wenn nicht vorhanden
   0.4  Config zusammenführen: ai_config.json als einzige Quelle für API-Keys
@@ -900,25 +901,22 @@ Phase 5 – Vision (Monat 4+, optional)
 |–                             |Phase 0: Branch mergen          |war nicht bekannt, jetzt kritischster Schritt  |
 |–                             |Phase 0.3: pyproject.toml       |fehlt komplett                                 |
 |–                             |Phase 1: normalize.py           |war geplant, jetzt noch dringlicher            |
-|–                             |Phase 3: Rule Learning          |MVP 4 ist nach wie vor der einzige fehlende MVP|
+|–                             |Phase 3: Rule Learning          |erledigt in stable/precheck                    |
 
 ### Abhängigkeitsgraph (revidiert)
 
 ```
-Phase 0: Branch mergen
+Phase 0–3: stable/precheck ist implementiert und getestet
     ↓
-    ├──► Config zusammenführen (ai_config.json als Quelle)
+    ├──► Deploy auf Proxmox/LXC verifizieren
     ↓
-    ├──► A1 normalize.py
-         ├──► A2 aliases.py
-         ├──► B5 jav.py
-         └──► analyzer.py refactoren (_STRIP_RE → normalize)
-              └──► C2 Trainingsdaten (normalize muss stabil sein)
-                   └──► C1 Fine-Tuning
+    ├──► B4 Embedding/ChromaDB optional als defensiver Fallback
+    ↓
+    ├──► C2 Trainingsdaten-Generator (aus bestätigten Rename-/Rule-Daten)
+    ↓
+    └──► C1 Fine-Tuning-Infrastruktur (RunPod/Unsloth; Training extern)
 
-Phase 2 Tests laufen parallel zu allem
-MVP4 Rule Learning hat keine Abhängigkeit → kann jederzeit starten
-CLIP/D1 ersetzt moondream → erst nach Phase 3 sinnvoll
+CLIP/D1 ersetzt moondream → erst nach stabiler Phase-4-Datenbasis sinnvoll
 ```
 
 ### Kritischer Pfad (revidiert)
@@ -1171,51 +1169,32 @@ ollama create scene-parser -f modelfiles/scene-parser.Modelfile
 
 -----
 
-## Nächste konkrete Schritte (revidiert) [I][H]
+## Nächste konkrete Schritte (Stand 2026-05-31) [I][H]
 
 ```
-Schritt 0 – Branch nutzbar machen (heute):
-  git checkout backup/precheck-ai-proxmox-20260529
-  git checkout -b stable/precheck   # oder direkt in main mergen
+Schritt A – Deploy/Live-Verifikation stable/precheck:
+  → Proxmox/LXC auf aktuellen Branch bringen
+  → namer-helper Service prüfen
+  → Pre-Check Smoke-Test: Duration, Rule Learning, JAV-Code, Stop-Scan
 
-Schritt 1 – System-Check:
-  which ffmpeg tesseract             # sind die binaries da?
-  ollama list                        # ist moondream vorhanden?
-  python -c "import namer_helper"    # ist das Paket installierbar?
+Schritt B – Phase 4 / B4 optionaler Embedding-Fallback:
+  src/namer_helper/embedding.py
+  → ChromaDB nur optional importieren
+  → Ollama nomic-embed-text nutzen, wenn vorhanden
+  → kein Hard-Fail ohne chromadb oder Ollama-Modell
+  → nur als letzter Suchweg nach Hash/JAV/Movie/Kontext
 
-Schritt 2 – README korrigieren:
-  "33 Tests" entfernen → aktuellen Stand dokumentieren
+Schritt C – Phase 4 / C2 Trainingsdaten-Generator:
+  src/namer_helper/training/generator.py
+  → JSONL aus bestätigten Rule-Learning-/Rename-Daten
+  → Varianten: Leet, Separatoren, Noise, Aliases
+  → keine Fantasie-Labels ohne bestätigte Quelle
 
-Schritt 3 – Config zusammenführen:
-  ai_config.json = API-Keys + Ollama-URL + pre_check_dir
-  helper.yaml = nur Pfade + Namer-Config (ollama_url entfernen)
-
-Schritt 4 – normalize.py schreiben (A1):
-  src/namer_helper/normalize.py
-  → Leet (3→e, 0→o, 4→a, 1→i, 5→s, 7→t)
-  → NUR zwischen Buchstaben (1080p bleibt 1080p)
-  → Noise (#, *, [, ])
-  → Unicode → ASCII
-  tests/test_normalize.py mit Leet-Fällen
-
-Schritt 5 – aliases.py + data/aliases.json (A2):
-  EA→Evil Angel, BRZ→Brazzers etc.
-  in filename_parser.py einbinden
-
-Schritt 6 – jav.py (B5):
-  Regex: \b([A-Z]{2,6}-\d{2,5})\b
-  Sonderfall FC2-PPV
-  in Pre-Check-Lookup Phase 1 einbinden
-
-Schritt 7 – analyzer.py refactoren:
-  _STRIP_RE ersetzen durch normalize()
-  Eingabe an LLM ist jetzt bereinigt
-
-Schritt 8 – Tests schreiben:
-  test_filename_parser.py
-  test_identification.py (alle Confidence-Pfade)
-  test_hasher.py (mock ffmpeg)
-  test_stashdb.py (mock HTTP)
+Schritt D – Phase 4 / C1 Infrastruktur:
+  training/README.md
+  training/train.sh
+  modelfiles/scene-parser.Modelfile
+  → echtes Fine-Tuning extern auf RunPod/Unsloth/CUDA
 ```
 
 -----
@@ -1414,36 +1393,41 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 
 -----
 
-*Exportiert aus Claude-Session | Projekt: namer-helper | Stand: 2026-05-30*
-*Branches: main + backup/precheck-ai-proxmox-20260529 (vollständig analysiert)*
-*Kritik + revidierte Umsetzungsreihenfolge: 2026-05-30*
+*Exportiert aus Claude-Session | Projekt: namer-helper | Stand: 2026-05-31*
+*Branches: main + backup/precheck-ai-proxmox-20260529 + stable/precheck (vollständig analysiert)*
+*Kritik + revidierte Umsetzungsreihenfolge: 2026-05-31*
 *Tags: [C] Claude Sonnet 4.6 | [E]=Implementiert [I]=Geplant | [H/M/L]=Priorität*
 
 -----
 
 ## Implementierungsstand stable/precheck (laufend aktualisiert) [E][H]
 
-**Branch:** `stable/precheck` | **Tests:** 118 | **Letzter Commit:** 2026-05-30
+**Branch:** `stable/precheck` | **Tests:** 334 | **Letzter Commit:** `fba4b7a` (2026-05-30)
 
 ### Abgeschlossene Schritte
 
 | Schritt | Modul | Status |
 |---------|-------|--------|
 | 0 | Branch `stable/precheck` erstellt, CLAUDE.md committed | ✓ |
-| 1a | README: Testanzahl korrigiert (50 → 118, wächst) | ✓ |
+| 1a | README: Testanzahl korrigiert (aktuell 334 Tests) | ✓ |
 | 1b | `helper.yaml`: Hinweis dass ollama/API-Keys aus `ai_config.json` kommen | ✓ |
 | 1c | `pyproject.toml`: ffmpeg/tesseract/moondream als System-Dep dokumentiert | ✓ |
 | 1d | `app.py`: Startup-Check für Binaries, moondream-Verfügbarkeitscheck | ✓ |
-| 4 | `normalize.py`: Leet, Noise, URL-decode, Unicode (93→118 Tests) | ✓ |
+| 4 | `normalize.py`: Leet, Noise, URL-decode, Unicode | ✓ |
 | 5 | `aliases.py` + `data/aliases.json`: Studio-Alias-Auflösung | ✓ |
+| 6 | `jav.py`: JAV-Code-Erkennung + TPDB `/jav` Lookup | ✓ |
+| 7 | `analyzer.py`: `_STRIP_RE` entfernt, nutzt `normalize()` | ✓ |
+| MVP4 | `rules/`: bestätigte Renames als Hash-Regeln lernen | ✓ |
+| T | Tests: filename_parser, hasher, StashDB, TPDB, Rules, Identification | ✓ |
 
 ### Noch ausstehend
 
 | Schritt | Modul | Priorität |
 |---------|-------|-----------|
-| 6 | `jav.py`: ABC-123 Code-Erkennung | Hoch |
-| 7 | `analyzer.py`: `_STRIP_RE` → `normalize()` refactoren | Hoch |
-| T | Tests: `test_filename_parser.py` mit normalize-Integration | Mittel |
+| Deploy | `stable/precheck` auf Proxmox/LXC live verifizieren | Hoch |
+| B4 | Optionaler Embedding-Fallback mit ChromaDB + Ollama `nomic-embed-text` | Mittel |
+| C2 | Trainingsdaten-Generator aus bestätigten Entscheidungen | Mittel |
+| C1 | Fine-Tuning-Infrastruktur; echtes Training extern | Niedrig |
 
 ### Wichtige Architekturentscheidungen
 
@@ -1457,3 +1441,7 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
   - `learn()` ist best-effort: silent fail bei I/O-Fehler
 - **ai_config.json** ist einzige Quelle für API-Keys und ollama_url (Web)
   - `helper.yaml` ist nur Referenz/Defaults für Pfade
+- **Rule Learning** prüft oshash-Regeln vor externen API-Lookups
+  - bestätigter Pre-Check-Rename schreibt best-effort nach `/etc/namer-helper/rules.yaml`
+- **JAV-Erkennung** läuft im Pre-Check vor generischer TPDB-Kontextsuche
+  - `ABP-123`/FC2-Codes gehen direkt über TPDB REST `/jav`
