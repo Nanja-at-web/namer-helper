@@ -169,6 +169,20 @@ def stop(scan_id: str | None = None) -> dict[str, Any]:
     return state
 
 
+def stop_interrupted(reason: str = "Scan durch Neustart unterbrochen") -> dict[str, Any]:
+    """Mark a persisted active scan as stopped after the web process restarted."""
+    state = load()
+    if state.get("active") or state.get("status") in {"running", "pause_requested", "stop_requested"}:
+        state["active"] = False
+        state["status"] = "stopped"
+        state["current"] = None
+        state["error"] = reason
+        state["finished_at"] = _now()
+        state["updated_at"] = _now()
+        save(state)
+    return state
+
+
 def set_paused(scan_id: str) -> None:
     state = load()
     if state.get("scan_id") != scan_id:

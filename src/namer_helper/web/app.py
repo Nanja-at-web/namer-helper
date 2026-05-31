@@ -246,6 +246,9 @@ def create_app(
 
     @app.on_event("startup")
     async def _startup_checks() -> None:
+        from namer_helper.web import scan_status
+
+        scan_status.stop_interrupted()
         _check_system_deps()
         ai_cfg = load_ai_config(helper_config_dir)
         if ai_cfg.ollama_url:
