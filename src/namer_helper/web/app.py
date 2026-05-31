@@ -1216,6 +1216,7 @@ def create_app(
                             "score": s.score,
                             "score_breakdown": s.score_breakdown,
                             "duration": s.duration,
+                            "sku": s.sku,
                         }
                         for s in tpdb_result.scenes
                     ]

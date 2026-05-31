@@ -68,6 +68,7 @@ class ThePornDBScene:
     score: int = 0
     score_breakdown: dict = field(default_factory=dict)
     duration: int | None = None
+    sku: str | None = None
 
 
 @dataclass
@@ -305,6 +306,7 @@ class ThePornDBClient:
                 score=100 if method == "jav" else 0,
                 score_breakdown={"JAV-Code": 100} if method == "jav" else {},
                 duration=int(raw_dur) if raw_dur else None,
+                sku=s.get("sku") or s.get("code") or s.get("identifier"),
             ))
         return scenes
 

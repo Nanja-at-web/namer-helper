@@ -451,10 +451,11 @@ function renderLookupResult(json, encodedName, rowIndex) {
   // Filename structured extraction
   if (json.filename_parsed) {
     const fp = json.filename_parsed;
-    const hasFpData = fp.cleaned || fp.studio || fp.performers?.length || fp.date || fp.tech_tags?.length;
+    const hasFpData = fp.cleaned || fp.studio || fp.performers?.length || fp.date || fp.tech_tags?.length || fp.jav_code;
     if (hasFpData) {
       html += `<div class="mb-2 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1 items-center">`;
       html += `<span class="font-semibold text-gray-400 uppercase tracking-wide">Dateiname</span>`;
+      if (fp.jav_code) html += `<span class="bg-pink-50 text-pink-700 border border-pink-100 rounded px-1.5 py-0.5 font-mono">JAV-Code: ${escHtml(fp.jav_code)}</span>`;
       if (fp.cleaned) html += `<span class="text-gray-700 font-medium">${escHtml(fp.cleaned)}</span>`;
       if (fp.studio)  html += `<span class="bg-blue-50 text-blue-700 px-1 rounded">${escHtml(fp.studio)}</span>`;
       if (fp.performers?.length) html += fp.performers.map(p => `<span class="bg-green-50 text-green-700 px-1 rounded">${escHtml(p)}</span>`).join('');
@@ -567,6 +568,7 @@ function renderLookupResult(json, encodedName, rowIndex) {
         const meta = [studio, s.date, s.performers && s.performers.length ? s.performers.join(', ') : null]
           .filter(Boolean).join(' · ');
         if (meta) html += `<div class="text-xs text-gray-500">${escHtml(meta)}</div>`;
+        if (s.sku) html += `<div class="text-xs text-pink-700 font-mono">TPDB SKU/Identifier: ${escHtml(s.sku)}</div>`;
         if (s.url) html += `<a href="${escHtml(s.url)}" target="_blank" class="text-xs text-indigo-600 hover:underline">${escHtml(s.url)}</a>`;
         html += `</div></div>`;
       });

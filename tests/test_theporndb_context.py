@@ -112,6 +112,7 @@ def test_tpdb_jav_search_uses_rest_sku_and_parses_scene(monkeypatch):
     assert result.best.id == "jav-1"
     assert result.best.match_method == "jav"
     assert result.best.score == 100
+    assert result.best.sku == "ABP-123"
     assert result.best.site == "Example Studio"
     assert result.best.network == "Example Network"
     assert result.best.performers == ["Performer A"]
