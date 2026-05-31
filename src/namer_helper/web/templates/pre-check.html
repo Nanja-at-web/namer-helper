@@ -454,7 +454,8 @@ function renderLookupResult(json, encodedName, rowIndex) {
     }
     if (id.suggested_name) {
       const recInput = `inp-ident-${rowIndex}`;
-      html += `<input id="${recInput}" type="text" value="${escHtml(id.suggested_name)}"
+      const preferredName = (json.namer_path_preview && json.namer_path_preview.path) ? json.namer_path_preview.path : id.suggested_name;
+      html += `<input id="${recInput}" type="text" value="${escHtml(preferredName)}"
         class="w-full text-sm font-mono border border-white/80 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-2 focus:ring-green-300 bg-white">`;
       html += `<div class="flex justify-end">`;
       html += `<button onclick="doRenameFromInput('${recInput}','${encodedName}',${rowIndex})"
