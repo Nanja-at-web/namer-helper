@@ -1127,6 +1127,8 @@ def create_app(
                 ctx_performers: list[str] = []
                 for p in (parsed.performers + sdb_perfs + meta_perfs):
                     key = p.lower().strip()
+                    if len(key) < 3:
+                        continue
                     if key and key not in _seen:
                         _seen.add(key)
                         ctx_performers.append(p)

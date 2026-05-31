@@ -109,6 +109,39 @@ def test_identification_rejects_cross_confirmed_duration_mismatch():
     assert any("Dauerkonflikt" in signal for signal in result["signals"])
 
 
+def test_identification_does_not_cross_confirm_on_duration_only():
+    result = build_identification(
+        original_name="wrong_context.mp4",
+        stashdb_scenes=[{
+            "title": "Stepsis Dirty feet Footjob",
+            "date": "2021-08-28",
+            "studio": "Scarlette D",
+            "performers": ["Scarlette D"],
+            "duration": 933,
+            "match_via": "context",
+        }],
+        stashdb_suggested="Scarlette D - 2021-08-28 - Stepsis Dirty feet Footjob.mp4",
+        tpdb_scenes=[{
+            "title": "Fabian D",
+            "date": "2009-01-26",
+            "site": "Twinks",
+            "performers": ["Fabian D"],
+            "duration": None,
+            "score": 35,
+            "match_method": "performer",
+        }],
+        tpdb_suggested=None,
+        ollama=None,
+        filename_parsed={"performers": ["d"]},
+        dest_duplicate=None,
+        local_duration=974,
+    )
+
+    assert result["source"] != "StashDB + ThePornDB"
+    assert result["action"] == "review"
+    assert result["suggested_name"] is None
+
+
 
 def test_identification_accepts_tpdb_movie_context_match():
     result = build_identification(

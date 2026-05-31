@@ -42,7 +42,8 @@ def _words(value: str | None) -> set[str]:
 
 
 def _name_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    key = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return key if len(key) >= 3 else ""
 
 
 def _performer_overlap(left: list[str] | None, right: list[str] | None) -> int:
@@ -101,6 +102,7 @@ def _cross_confirm(
     local_duration: int | None,
 ) -> tuple[bool, list[str], bool]:
     signals: list[str] = []
+    identity_signals: list[str] = []
     if not stash_scene or not tpdb_scene:
         return False, signals, False
 
@@ -110,21 +112,22 @@ def _cross_confirm(
 
     title_overlap = _words(stash_scene.get("title")) & _words(tpdb_scene.get("title"))
     if len(title_overlap) >= 2:
-        signals.append("Titelüberschneidung StashDB/TPDB")
+        identity_signals.append("Titelüberschneidung StashDB/TPDB")
 
     perf_matches = _performer_overlap(stash_scene.get("performers"), tpdb_scene.get("performers"))
     if perf_matches:
-        signals.append(f"{perf_matches} Performer bestätigt")
+        identity_signals.append(f"{perf_matches} Performer bestätigt")
 
     parsed_perfs = (parsed or {}).get("performers") or []
     parsed_matches = _performer_overlap(parsed_perfs, tpdb_scene.get("performers"))
     if parsed_matches >= 2:
-        signals.append(f"{parsed_matches} Dateiname-Performer bestätigt")
+        identity_signals.append(f"{parsed_matches} Dateiname-Performer bestätigt")
 
     if stash_scene.get("date") and stash_scene.get("date") == tpdb_scene.get("date"):
-        signals.append("Datum bestätigt")
+        identity_signals.append("Datum bestätigt")
 
-    return bool(signals) and not duration_conflict, signals, duration_conflict
+    signals.extend(identity_signals)
+    return bool(identity_signals) and not duration_conflict, signals, duration_conflict
 
 
 def build_identification(

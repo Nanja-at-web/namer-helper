@@ -155,6 +155,15 @@ def resume() -> dict[str, Any]:
     return state
 
 
+def _mark_unfinished_stopped(state: dict[str, Any]) -> None:
+    for item in state.get("items", []):
+        if item.get("status") in {"pending", "running"}:
+            item["status"] = "stopped"
+            item["ok"] = False
+            item["error"] = "Scan gestoppt"
+            item["updated_at"] = _now()
+
+
 def stop(scan_id: str | None = None) -> dict[str, Any]:
     state = load()
     if scan_id and state.get("scan_id") != scan_id:
@@ -163,6 +172,7 @@ def stop(scan_id: str | None = None) -> dict[str, Any]:
         state["active"] = False
         state["status"] = "stopped"
         state["current"] = None
+        _mark_unfinished_stopped(state)
         state["finished_at"] = _now()
         state["updated_at"] = _now()
         save(state)
@@ -177,6 +187,7 @@ def stop_interrupted(reason: str = "Scan durch Neustart unterbrochen") -> dict[s
         state["status"] = "stopped"
         state["current"] = None
         state["error"] = reason
+        _mark_unfinished_stopped(state)
         state["finished_at"] = _now()
         state["updated_at"] = _now()
         save(state)
