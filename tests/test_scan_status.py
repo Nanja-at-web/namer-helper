@@ -59,3 +59,21 @@ def test_scan_status_pause_resume_stop(tmp_path, monkeypatch):
     final = scan_status.stop(state["scan_id"])
     assert final["active"] is False
     assert final["status"] == "stopped"
+
+
+def test_stopped_scan_is_not_overwritten_by_late_worker_updates(tmp_path, monkeypatch):
+    monkeypatch.setattr(scan_status, "STATUS_DIR", tmp_path)
+    monkeypatch.setattr(scan_status, "STATUS_FILE", tmp_path / "pre-check.json")
+
+    state = scan_status.start(["one.mp4"])
+    scan_id = state["scan_id"]
+
+    scan_status.mark_running(scan_id, "one.mp4")
+    scan_status.stop(scan_id)
+    scan_status.mark_done(scan_id, "one.mp4", ok=True)
+    scan_status.finish(scan_id)
+
+    final = scan_status.load()
+    assert final["active"] is False
+    assert final["status"] == "stopped"
+    assert final["done"] == 0

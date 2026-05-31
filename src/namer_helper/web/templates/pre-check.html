@@ -658,8 +658,21 @@ function renderLookupResult(json, encodedName, rowIndex) {
 
 let scanPollTimer = null;
 
+function hideScanProgress() {
+  const box = document.getElementById('bulk-progress');
+  if (box) box.classList.add('hidden');
+}
+
 function renderScanStatus(scan) {
-  if (!scan || scan.status === 'idle' || !scan.total) return;
+  if (!scan || scan.status === 'idle' || !scan.total) {
+    hideScanProgress();
+    return;
+  }
+  if (scan.status === 'stopped') {
+    renderCompletedScanItems(scan);
+    hideScanProgress();
+    return;
+  }
   document.getElementById('bulk-progress').classList.remove('hidden');
   const done = scan.done || 0;
   const total = scan.total || 0;

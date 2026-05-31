@@ -87,6 +87,8 @@ def mark_done(
     if state.get("scan_id") != scan_id:
         return
     scan_status = state.get("status")
+    if scan_status == "stopped":
+        return
     done = 0
     for item in state.get("items", []):
         if item.get("name") == name:
@@ -108,6 +110,8 @@ def mark_done(
 def finish(scan_id: str) -> None:
     state = load()
     if state.get("scan_id") != scan_id:
+        return
+    if state.get("status") == "stopped":
         return
     state["active"] = False
     state["status"] = "finished"
