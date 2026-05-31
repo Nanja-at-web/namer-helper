@@ -15,6 +15,7 @@ import requests
 
 
 DEFAULT_MODEL = "nomic-embed-text"
+FALLBACK_MODELS = ("all-minilm", "mxbai-embed-large")
 DEFAULT_COLLECTION = "tpdb_scenes"
 _DEFAULT_CHROMA = object()
 
@@ -46,24 +47,33 @@ class OllamaEmbedder:
         self.timeout = timeout
 
     def is_available(self) -> bool:
+        return self.resolve_model() is not None
+
+    def resolve_model(self) -> str | None:
         try:
             r = requests.get(f"{self.base_url}/api/tags", timeout=5)
-            if r.status_code != 200:
-                return False
-            models = [m.get("name", "") for m in r.json().get("models", [])]
-            return any(name == self.model or name.startswith(f"{self.model}:") for name in models)
+            r.raise_for_status()
+            installed = [m.get("name", "") for m in r.json().get("models", [])]
         except Exception:
-            return False
+            return None
+
+        for candidate in (self.model, *FALLBACK_MODELS):
+            match = _matching_model(candidate, installed)
+            if match:
+                return match
+        return None
 
     def embed(self, text: str) -> tuple[list[float] | None, str | None]:
         text = (text or "").strip()
         if not text:
             return None, "Kein Embedding-Text verfügbar"
-        if not self.is_available():
-            return None, f"Ollama Embedding-Modell fehlt: {self.model}"
+        model = self.resolve_model()
+        if not model:
+            models = ", ".join((self.model, *FALLBACK_MODELS))
+            return None, f"Ollama Embedding-Modell fehlt: {models}"
 
         # Current Ollama embedding endpoint. Official docs: /api/embed.
-        body, err = self._post_embed("/api/embed", {"model": self.model, "input": text})
+        body, err = self._post_embed("/api/embed", {"model": model, "input": text})
         if body is not None:
             embeddings = body.get("embeddings") or []
             if embeddings and isinstance(embeddings[0], list):
@@ -73,7 +83,7 @@ class OllamaEmbedder:
                 return [float(v) for v in embedding], None
 
         # Legacy endpoint fallback for older Ollama installations.
-        body, legacy_err = self._post_embed("/api/embeddings", {"model": self.model, "prompt": text})
+        body, legacy_err = self._post_embed("/api/embeddings", {"model": model, "prompt": text})
         if body is not None and isinstance(body.get("embedding"), list):
             return [float(v) for v in body["embedding"]], None
         return None, legacy_err or err or "Ollama Embedding fehlgeschlagen"
@@ -180,6 +190,13 @@ def _clean_metadata(doc: dict[str, Any]) -> dict[str, Any]:
     if duration:
         metadata["duration"] = int(duration)
     return metadata
+
+
+def _matching_model(candidate: str, installed: list[str]) -> str | None:
+    for name in installed:
+        if name == candidate or name.startswith(f"{candidate}:"):
+            return name
+    return None
 
 
 def _parse_hits(raw: dict[str, Any]) -> list[EmbeddingHit]:

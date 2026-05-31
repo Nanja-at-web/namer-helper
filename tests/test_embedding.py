@@ -76,6 +76,23 @@ def test_ollama_embedder_reports_missing_model():
         vector, err = OllamaEmbedder(model="nomic-embed-text").embed("hello")
     assert vector is None
     assert "nomic-embed-text" in err
+    assert "all-minilm" in err
+
+
+def test_ollama_embedder_uses_installed_fallback_model():
+    calls = []
+
+    def fake_post(url, json, timeout):
+        calls.append(json)
+        return _Response({"embeddings": [[0.1, 0.2]]})
+
+    with patch("namer_helper.embedding.requests.get", return_value=_Response({"models": [{"name": "all-minilm:latest"}]})):
+        with patch("namer_helper.embedding.requests.post", side_effect=fake_post):
+            vector, err = OllamaEmbedder(model="nomic-embed-text").embed("hello")
+
+    assert err is None
+    assert vector == [0.1, 0.2]
+    assert calls[0]["model"] == "all-minilm:latest"
 
 
 def test_embedding_index_upsert_and_search(tmp_path):
