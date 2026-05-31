@@ -20,6 +20,7 @@ TMPL="$SITE/web/templates"
 # Helper: push a file from this host into the container
 push() {
   local src="$1" dst="$2"
+  pct exec "$CT" -- mkdir -p "$(dirname "$dst")"
   pct push "$CT" "$src" "$dst" --perms 644
 }
 
