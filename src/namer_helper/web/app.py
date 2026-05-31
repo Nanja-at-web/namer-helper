@@ -1549,16 +1549,18 @@ def create_app(
             return {"ok": False, "submitted": 0, "errors": [str(exc)]}
 
     @app.post("/pre-check/cache/invalidate")
-    async def pre_check_cache_invalidate(name: str):
+    async def pre_check_cache_invalidate(name: str = "", oshash: str = ""):
         try:
-            from namer_helper.namer_bridge.hasher import compute_oshash
             from namer_helper.web import lookup_cache
-            ai_cfg = load_ai_config(helper_config_dir)
-            pre_dir = Path(ai_cfg.pre_check_dir)
-            video_path = _safe_path(pre_dir, name)
-            if video_path is None:
-                return {"ok": False, "error": "Datei nicht gefunden"}
-            oshash = compute_oshash(video_path)
+            if not oshash:
+                from namer_helper.namer_bridge.hasher import compute_oshash
+
+                ai_cfg = load_ai_config(helper_config_dir)
+                pre_dir = Path(ai_cfg.pre_check_dir)
+                video_path = _safe_path(pre_dir, name)
+                if video_path is None:
+                    return {"ok": False, "error": "Datei nicht gefunden"}
+                oshash = compute_oshash(video_path)
             if not oshash:
                 return {"ok": False, "error": "oshash konnte nicht berechnet werden"}
             removed = lookup_cache.invalidate(oshash)

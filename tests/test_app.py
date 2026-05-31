@@ -246,6 +246,16 @@ class TestPreCheckRename:
         assert "Confirmed.mp4" in rules
 
 
+class TestPreCheckCache:
+    def test_invalidate_accepts_oshash(self, client):
+        with patch("namer_helper.web.lookup_cache.invalidate", return_value=True) as mocked:
+            r = client.post("/pre-check/cache/invalidate", params={"oshash": "e654a5305629c18b"})
+
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "removed": True, "oshash": "e654a5305629c18b"}
+        mocked.assert_called_once_with("e654a5305629c18b")
+
+
 # ── settings save/load ────────────────────────────────────────────────────────
 
 class TestSettings:
