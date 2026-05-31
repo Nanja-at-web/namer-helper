@@ -1,7 +1,7 @@
 import types
 from unittest.mock import patch
 
-from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder, load_scene_documents
+from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder, load_lookup_cache_documents, load_scene_documents
 
 
 class _Response:
@@ -165,3 +165,38 @@ def test_load_scene_documents_from_jsonl(tmp_path):
 
     assert [d["id"] for d in docs] == ["scene-1", "scene-2"]
     assert docs[1]["performers"] == ["Performer A"]
+
+
+def test_load_lookup_cache_documents_extracts_tpdb_results(tmp_path):
+    cache_file = tmp_path / "hash.json"
+    cache_file.write_text("""
+{
+  "tpdb_scenes": [{
+    "title": "Scene Title",
+    "date": "2024-01-02",
+    "site": "Example Site",
+    "network": "Example Network",
+    "performers": ["Performer A"],
+    "url": "https://example.invalid/scene",
+    "image": "https://example.invalid/scene.jpg",
+    "duration": 1200,
+    "sku": "ABC-123"
+  }],
+  "tpdb_movies": [{
+    "title": "Movie Title",
+    "date": "2020-05-06",
+    "site": "Movie Studio",
+    "performers": ["Performer B"],
+    "url": "https://example.invalid/movie",
+    "duration": 7200,
+    "type": "Movie"
+  }]
+}
+""", encoding="utf-8")
+
+    docs = load_lookup_cache_documents(tmp_path)
+
+    assert [d["title"] for d in docs] == ["Scene Title", "Movie Title"]
+    assert docs[0]["id"] == "https://example.invalid/scene"
+    assert docs[0]["sku"] == "ABC-123"
+    assert docs[1]["id"] == "https://example.invalid/movie"

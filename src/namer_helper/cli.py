@@ -235,6 +235,55 @@ def index_tpdb_cmd(source: Path, ollama_url: str, model: str, persist_dir: str) 
     logger.success(f"Indexiert: {len(docs)} TPDB-Dokument(e) mit {resolved_model} -> {persist_dir}")
 
 
+@main.command("index-tpdb-cache")
+@click.option(
+    "--cache-dir",
+    default="/opt/namer-helper/lookup-cache",
+    show_default=True,
+    help="Pre-Check Lookup-Cache-Verzeichnis",
+)
+@click.option(
+    "--ollama-url",
+    default="http://localhost:11434",
+    show_default=True,
+    help="Ollama-Server URL",
+)
+@click.option(
+    "--model",
+    default="nomic-embed-text",
+    show_default=True,
+    help="Bevorzugtes Embedding-Modell",
+)
+@click.option(
+    "--persist-dir",
+    default="/etc/namer-helper/embeddings",
+    show_default=True,
+    help="ChromaDB-Verzeichnis",
+)
+def index_tpdb_cache_cmd(cache_dir: str, ollama_url: str, model: str, persist_dir: str) -> None:
+    """TPDB-Treffer aus dem lokalen Pre-Check-Cache indexieren."""
+    from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder, load_lookup_cache_documents
+
+    docs = load_lookup_cache_documents(Path(cache_dir))
+    if not docs:
+        logger.warning(f"Keine TPDB-Dokumente im Lookup-Cache gefunden: {cache_dir}")
+        return
+
+    embedder = OllamaEmbedder(base_url=ollama_url, model=model)
+    resolved_model = embedder.resolve_model()
+    if not resolved_model:
+        logger.error(f"Kein Embedding-Modell in Ollama verfügbar unter {ollama_url}")
+        raise click.Abort()
+
+    index = ChromaSceneIndex(Path(persist_dir))
+    result = index.upsert(docs, embedder)
+    if result.error:
+        logger.error(result.error)
+        raise click.Abort()
+
+    logger.success(f"Indexiert: {len(docs)} Cache-TPDB-Dokument(e) mit {resolved_model} -> {persist_dir}")
+
+
 @main.command("search-embedding")
 @click.argument("query")
 @click.option(

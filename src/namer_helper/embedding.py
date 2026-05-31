@@ -191,6 +191,28 @@ def load_scene_documents(path: Path) -> list[dict[str, Any]]:
     return [doc for doc in docs if doc.get("id") and doc.get("title")]
 
 
+def load_lookup_cache_documents(cache_dir: Path) -> list[dict[str, Any]]:
+    """Extract TPDB scene/movie documents from pre-check lookup-cache files."""
+    docs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in sorted(cache_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for key in ("tpdb_scenes", "tpdb_movies"):
+            for item in data.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                doc = _normalize_scene_document(item)
+                doc_id = str(doc.get("id") or "").strip()
+                if not doc_id or not doc.get("title") or doc_id in seen:
+                    continue
+                seen.add(doc_id)
+                docs.append(doc)
+    return docs
+
+
 def _load_raw_items(path: Path) -> list[Any]:
     if path.suffix.lower() == ".jsonl":
         items = []
@@ -241,7 +263,9 @@ def _normalize_scene_document(item: dict[str, Any]) -> dict[str, Any]:
     if isinstance(posters, dict):
         image = posters.get("large") or posters.get("full") or image
 
-    scene_id = item.get("id") or item.get("uuid")
+    scene_id = item.get("id") or item.get("uuid") or item.get("url")
+    if not scene_id and (item.get("sku") or item.get("title")):
+        scene_id = f"{item.get('sku') or 'tpdb'}:{item.get('title') or ''}"
     return {
         "id": str(scene_id or ""),
         "title": str(item.get("title") or item.get("name") or ""),
