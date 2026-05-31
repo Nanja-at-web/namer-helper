@@ -119,6 +119,18 @@ class TestStructuralMarkers:
         info = parse_filename("Studio.#Jane_Doe.#John_Smith.2023.mp4")
         assert len(info.performers) == 2
 
+    def test_noise_hashtags_are_not_performers(self):
+        info = parse_filename(
+            "A Slender Beautiful Girl Rena Miyashita "
+            "#Jav #Japan #Japanese #Asian #Decensored #Solowork #Uniform.mp4"
+        )
+        assert info.performers == []
+        assert "Rena Miyashita" in info.cleaned
+
+    def test_mixed_noise_and_real_hashtag_performer(self):
+        info = parse_filename("Scene.Title.#jav.#Jane_Doe.#asian.mp4")
+        assert info.performers == ["Jane Doe"]
+
 
 # ── alias integration ─────────────────────────────────────────────────────────
 

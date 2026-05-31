@@ -51,6 +51,17 @@ _BRACKET_RE = re.compile(r'[\[\(][^\]\)]{0,80}[\]\)]')
 
 _MULTI_SPACE = re.compile(r'\s{2,}')
 
+_NOISE_TAGS = {
+    "18", "3d", "4k", "60fps", "aac", "amateur", "amwf", "anal", "asian",
+    "bigass", "bigtits", "blonde", "blowjob", "censored", "cosplay",
+    "creampie", "cuckold", "decensored", "dl", "fhd", "fullhd", "hd",
+    "hentai", "interracial", "jav", "javhd", "japan", "japanese", "javguru",
+    "lesbian", "massage", "mature", "milf", "mosaic", "no-mosaic",
+    "nomosaic", "porn", "pov", "ppv", "roleplay", "schoolgirl", "sister",
+    "slender", "solo", "solowork", "squirting", "subtitles", "tube", "uhd",
+    "uncensored", "uniform", "vr", "web", "x264", "x265",
+}
+
 
 @dataclass
 class FilenameInfo:
@@ -84,8 +95,10 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     if hashtags:
         # Normalize each performer token (resolves leet initials/names)
         info.performers = [
-            _normalize(t.replace('_', ' ')).normalized
+            normalized
             for t in hashtags[:5]
+            for normalized in [_normalize(t.replace('_', ' ')).normalized]
+            if not _is_noise_tag(normalized)
         ]
     work = re.sub(r'[#@]\w[\w_]*', ' ', stem)
 
@@ -184,3 +197,8 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     info.confidence = round(min(score, 1.0), 2)
 
     return info
+
+
+def _is_noise_tag(value: str) -> bool:
+    key = re.sub(r"[^a-z0-9]+", "", value.lower())
+    return key in _NOISE_TAGS
