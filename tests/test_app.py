@@ -207,6 +207,30 @@ class TestScanStatusRoutes:
         assert r.status_code == 200
 
 
+class TestPreCheckTimeout:
+    def test_single_lookup_timeout_marks_overall_timeout(self, dirs):
+        app = create_app(
+            namer_config=dirs["cfg"],
+            report_output_dir=dirs["reports"],
+            helper_config_dir=dirs["config"],
+        )
+
+        async def slow_lookup(_name):
+            import asyncio
+            await asyncio.sleep(0.01)
+
+        with patch("namer_helper.web.app._SINGLE_LOOKUP_TIMEOUT_SECONDS", 0.001):
+            with patch("namer_helper.web.app._check_system_deps"):
+                with patch("namer_helper.web.app._is_moondream_available", return_value=False):
+                    with TestClient(app, raise_server_exceptions=False) as c:
+                        r = c.post("/pre-check/lookup", params={"name": "Slow.mp4"})
+
+        data = r.json()
+        assert data["timeout"] is True
+        assert data["ollama"]["error"] == "Nicht abgeschlossen wegen Gesamt-Timeout"
+        assert data["stashdb_error"] == "Nicht abgeschlossen wegen Gesamt-Timeout"
+
+
 class TestPreCheckRename:
     def test_rename_learns_rule_even_without_client_oshash(self, dirs):
         pre_dir = dirs["config"].parent / "pre-check"

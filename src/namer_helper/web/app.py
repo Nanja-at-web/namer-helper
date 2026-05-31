@@ -834,6 +834,7 @@ def create_app(
         except asyncio.TimeoutError:
             return {
                 "ok": False,
+                "timeout": True,
                 "error": (
                     f"Analyse-Timeout nach {_SINGLE_LOOKUP_TIMEOUT_SECONDS}s — "
                     "Datei möglicherweise zu groß oder Server ausgelastet"
@@ -844,10 +845,18 @@ def create_app(
                     "reason": "Timeout", "suggested_name": None,
                     "action": "review", "signals": [],
                 },
-                "stashdb_scenes": [], "stashdb_error": "Timeout", "stashdb_suggested": None,
-                "tpdb_scenes": [], "tpdb_error": "Timeout", "tpdb_suggested": None,
-                "tpdb_movies": [], "tpdb_movie_error": "Timeout", "tpdb_movie_suggested": None,
-                "ollama": None, "filename_parsed": None,
+                "stashdb_scenes": [], "stashdb_error": "Nicht abgeschlossen wegen Gesamt-Timeout", "stashdb_suggested": None,
+                "tpdb_scenes": [], "tpdb_error": "Nicht abgeschlossen wegen Gesamt-Timeout", "tpdb_suggested": None,
+                "tpdb_movies": [], "tpdb_movie_error": "Nicht abgeschlossen wegen Gesamt-Timeout", "tpdb_movie_suggested": None,
+                "ollama": {
+                    "cleaned_name": "",
+                    "search_queries": [],
+                    "confidence": 0.0,
+                    "recommended_action": "manual_review",
+                    "reason": "",
+                    "error": "Nicht abgeschlossen wegen Gesamt-Timeout",
+                },
+                "filename_parsed": None,
                 "jav_code": None, "tpdb_crosscheck": "skipped",
             }
 

@@ -414,7 +414,8 @@ function renderLookupResult(json, encodedName, rowIndex) {
     html += `<button onclick="invalidateCache('${encodedName}', ${rowIndex})"
       class="text-xs text-gray-400 hover:text-red-500 underline">Cache löschen</button>`;
   } else {
-    html += `<span class="text-xs text-gray-300">Frisch geprüft</span>`;
+    const freshLabel = json.timeout ? 'Frisch geprüft · Timeout nicht gespeichert' : 'Frisch geprüft';
+    html += `<span class="text-xs text-gray-300">${freshLabel}</span>`;
     html += `<button onclick="rerunLookup('${encodedName}', ${rowIndex})"
       class="text-xs text-gray-400 hover:text-purple-600 underline">↻ Erneut prüfen</button>`;
   }
