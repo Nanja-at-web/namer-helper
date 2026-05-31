@@ -61,7 +61,7 @@
     hilfreich wenn Dateinamen viele Tags, Hashtags oder technische Informationen enthalten.
   </p>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
     <div>
       <label class="block text-xs font-medium text-gray-500 mb-1">Ollama URL</label>
       <input id="s-ollama-url" type="text" value="{{ ai_cfg.ollama_url }}"
@@ -70,13 +70,28 @@
     </div>
     <div>
       <label class="block text-xs font-medium text-gray-500 mb-1">Modell</label>
-      <input id="s-ollama-model" type="text" value="{{ ai_cfg.ollama_model }}"
-        placeholder="llama3"
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <div class="flex gap-2">
+        <select id="s-ollama-model"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          {% for model in ollama_models %}
+            <option value="{{ model }}" {{ 'selected' if model == ai_cfg.ollama_model else '' }}>{{ model }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" onclick="refreshOllamaModels()"
+          class="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 text-gray-700 shrink-0"
+          title="Modelle von Ollama neu laden">Neu laden</button>
+      </div>
+      <div id="ollama-model-msg" class="text-xs text-gray-400 mt-1">
+        {% if ollama_models_error %}
+          Modelle konnten nicht geladen werden: {{ ollama_models_error }}
+        {% else %}
+          {{ ollama_models|length }} Modell(e) gefunden.
+        {% endif %}
+      </div>
     </div>
   </div>
   <p class="text-xs text-gray-400 mt-2">
-    Empfohlen: <code>llama3</code> oder <code>mistral</code>. Ollama muss erreichbar sein, sonst wird die Analyse übersprungen.
+    Wähle ein installiertes Textmodell für die Dateinamen-Analyse. Embedding-Modelle wie <code>all-minilm</code> sind für die semantische Suche gedacht.
   </p>
 </div>
 
@@ -122,6 +137,34 @@ async function saveSettings() {
   el.textContent = json.ok ? '✓ Einstellungen gespeichert.' : '✗ Fehler: ' + json.error;
   el.className = 'mb-4 text-sm rounded p-3 ' + (json.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
   el.classList.remove('hidden');
+}
+
+async function refreshOllamaModels() {
+  const url = document.getElementById('s-ollama-url').value.trim();
+  const select = document.getElementById('s-ollama-model');
+  const msg = document.getElementById('ollama-model-msg');
+  const current = select.value;
+  msg.textContent = 'Lade Modelle...';
+  msg.className = 'text-xs text-gray-400 mt-1';
+  try {
+    const res = await fetch('/settings/ollama-models?url=' + encodeURIComponent(url));
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Ollama nicht erreichbar');
+    const models = json.models || [];
+    select.innerHTML = '';
+    if (!models.includes(current) && current) models.unshift(current);
+    models.forEach(model => {
+      const opt = document.createElement('option');
+      opt.value = model;
+      opt.textContent = model;
+      if (model === current) opt.selected = true;
+      select.appendChild(opt);
+    });
+    msg.textContent = models.length + ' Modell(e) gefunden.';
+  } catch (err) {
+    msg.textContent = 'Modelle konnten nicht geladen werden: ' + err.message;
+    msg.className = 'text-xs text-red-500 mt-1';
+  }
 }
 </script>
 

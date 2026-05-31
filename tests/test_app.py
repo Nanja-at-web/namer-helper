@@ -14,7 +14,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from namer_helper.web.app import create_app, _safe_path
+from namer_helper.web.app import create_app, _list_ollama_models, _safe_path
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -249,6 +249,46 @@ class TestPreCheckRename:
 # ── settings save/load ────────────────────────────────────────────────────────
 
 class TestSettings:
+    def test_list_ollama_models_filters_non_text_models(self):
+        class Response:
+            def json(self):
+                return {"models": [
+                    {"name": "llama3:latest"},
+                    {"name": "all-minilm:latest"},
+                    {"name": "mxbai-embed-large:latest"},
+                    {"name": "moondream:latest"},
+                    {"name": "qwen2.5:7b"},
+                ]}
+
+            def raise_for_status(self):
+                pass
+
+        with patch("requests.get") as mocked:
+            mocked.return_value = Response()
+            models, error = _list_ollama_models("http://ollama:11434")
+
+        assert error is None
+        assert models == ["llama3:latest", "qwen2.5:7b"]
+
+    def test_settings_lists_ollama_models(self, client):
+        with patch("namer_helper.web.app._list_ollama_models",
+                   return_value=(["llama3:latest", "qwen2.5:7b"], None)):
+            r = client.get("/settings")
+
+        assert r.status_code == 200
+        assert "llama3:latest" in r.text
+        assert "qwen2.5:7b" in r.text
+        assert 'id="s-ollama-model"' in r.text
+
+    def test_settings_ollama_models_endpoint(self, client):
+        with patch("namer_helper.web.app._list_ollama_models",
+                   return_value=(["llama3:latest", "qwen2.5:7b"], None)) as mocked:
+            r = client.get("/settings/ollama-models", params={"url": "http://ollama:11434"})
+
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "models": ["llama3:latest", "qwen2.5:7b"], "error": None}
+        mocked.assert_called_once_with("http://ollama:11434")
+
     def test_settings_save_roundtrip(self, client, dirs):
         payload = {
             "ollama_url": "http://test:11434",

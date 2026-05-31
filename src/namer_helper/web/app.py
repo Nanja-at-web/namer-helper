@@ -37,6 +37,7 @@ _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
 _SINGLE_LOOKUP_TIMEOUT_SECONDS = 120   # single /pre-check/lookup via browser
+_NON_TEXT_OLLAMA_MODELS = ("all-minilm", "mxbai-embed", "nomic-embed", "moondream")
 
 
 def _is_ignored_file(path: Path) -> bool:
@@ -217,6 +218,27 @@ def _is_moondream_available(ollama_url: str) -> bool:
             ollama_url,
         )
     return available
+
+
+def _list_ollama_models(ollama_url: str) -> tuple[list[str], str | None]:
+    """Return installed Ollama model names for a settings dropdown."""
+    if not ollama_url:
+        return [], "Ollama URL fehlt"
+    try:
+        import requests as _requests
+        resp = _requests.get(f"{ollama_url.rstrip('/')}/api/tags", timeout=5)
+        resp.raise_for_status()
+        models = sorted(
+            name for name in {
+                str(m.get("name") or "").strip()
+                for m in resp.json().get("models", [])
+                if str(m.get("name") or "").strip()
+            }
+            if not any(hint in name.lower() for hint in _NON_TEXT_OLLAMA_MODELS)
+        )
+        return models, None
+    except Exception as exc:
+        return [], str(exc)
 
 
 def create_app(
@@ -1747,9 +1769,19 @@ def create_app(
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
         ai_cfg = load_ai_config(helper_config_dir)
+        ollama_models, ollama_models_error = _list_ollama_models(ai_cfg.ollama_url)
+        if ai_cfg.ollama_model and ai_cfg.ollama_model not in ollama_models:
+            ollama_models = [ai_cfg.ollama_model, *ollama_models]
         return templates.TemplateResponse(request, "settings.html", {
             "ai_cfg": ai_cfg,
+            "ollama_models": ollama_models,
+            "ollama_models_error": ollama_models_error,
         })
+
+    @app.get("/settings/ollama-models")
+    async def settings_ollama_models(url: str = ""):
+        models, error = _list_ollama_models(url.strip())
+        return {"ok": error is None, "models": models, "error": error}
 
     @app.post("/settings")
     async def settings_save(request: Request):
