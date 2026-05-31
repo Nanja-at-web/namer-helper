@@ -847,6 +847,12 @@ def create_app(
         s = seconds % 60
         return f"{h:02d}:{m:02d}:{s:02d}"
 
+    def _pre_check_relative_name(pre_dir: Path, path: Path) -> str:
+        try:
+            return path.relative_to(pre_dir).as_posix()
+        except ValueError:
+            return path.name
+
     def _list_pre_check_files(pre_dir: Path) -> list[dict]:
         if not pre_dir.exists():
             return []
@@ -887,9 +893,10 @@ def create_app(
                 lookup_cached = bool(oshash and lookup_cache.get(oshash))
             except Exception:
                 lookup_cached = False
+            rel_name = _pre_check_relative_name(pre_dir, f)
             items.append({
-                "name": f.name,
-                "name_encoded": quote(f.name),
+                "name": rel_name,
+                "name_encoded": quote(rel_name, safe=""),
                 "size_mb": size_mb,
                 "size_bytes": size_bytes,
                 "duration_seconds": duration_seconds,
@@ -1009,12 +1016,13 @@ def create_app(
             loop = asyncio.get_running_loop()
             ai_cfg = load_ai_config(helper_config_dir)
             pre_dir = Path(ai_cfg.pre_check_dir)
+            source_name = Path(name).name
             # Runtime aliases: /etc/namer-helper/aliases.json (same path learn() writes to).
             # Falls back to package defaults if the file doesn't exist yet.
             aliases = load_aliases(helper_config_dir / "aliases.json")
-            parsed = parse_filename(name, aliases=aliases)
-            jav_code = detect_jav(name)
-            ext = Path(name).suffix
+            parsed = parse_filename(source_name, aliases=aliases)
+            jav_code = detect_jav(source_name)
+            ext = Path(source_name).suffix
             hashes: dict = {"phash": None, "oshash": None, "duration": None, "resolution": None, "ocr_text": ""}
             video_path = _safe_path(pre_dir, name)
             has_video = bool(video_path and video_path.exists())
@@ -1069,7 +1077,7 @@ def create_app(
                             "ok": True,
                             "hashes": hashes,
                             "filename_parsed": None,
-                            "identification": rule_to_identification(_rule, name),
+                            "identification": rule_to_identification(_rule, source_name),
                             "stashdb_scenes": [], "stashdb_error": None,
                             "stashdb_suggested": None,
                             "tpdb_scenes": [], "tpdb_error": None, "tpdb_suggested": None,
@@ -1104,7 +1112,7 @@ def create_app(
                     # Pass all known signals so Ollama can build a meaningful suggestion
                     # even when the filename is a tag list or garbage.
                     res = analyze_filename(
-                        parsed.cleaned or name,
+                        parsed.cleaned or source_name,
                         client,
                         model=ai_cfg.ollama_model,
                         performers=parsed.performers or [],
@@ -1524,7 +1532,7 @@ def create_app(
                 "jav_code": jav_code.code if jav_code else None,
             }
             identification = build_identification(
-                original_name=name,
+                original_name=source_name,
                 stashdb_scenes=stashdb_scenes,
                 stashdb_suggested=stashdb_suggested,
                 tpdb_scenes=tpdb_scenes,
@@ -1538,7 +1546,7 @@ def create_app(
             )
             namer_path_preview = _namer_path_preview(
                 namer_config,
-                original_name=name,
+                original_name=source_name,
                 hashes=hashes,
                 filename_parsed=filename_parsed,
                 tpdb_scenes=tpdb_scenes,
@@ -1755,9 +1763,21 @@ def create_app(
             suggested = new_name.strip()
             if Path(suggested).suffix.lower() not in _VIDEO_EXTS:
                 suggested = suggested + src.suffix
-            dst = _safe_path(pre_dir, suggested)
+            suggested_path = Path(suggested)
+            if suggested_path.is_absolute() or any(part in {".", ".."} for part in suggested_path.parts):
+                return {"ok": False, "error": "Ungültiger Dateiname"}
+            if len(suggested_path.parts) == 1:
+                dst = src.with_name(suggested)
+                try:
+                    dst.resolve().relative_to(pre_dir.resolve())
+                except ValueError:
+                    return {"ok": False, "error": "Ungültiger Dateiname"}
+            else:
+                dst = _safe_path(pre_dir, suggested_path.as_posix())
             if not dst:
                 return {"ok": False, "error": "Ungültiger Dateiname"}
+            if not dst.parent.exists():
+                return {"ok": False, "error": "Zielordner existiert nicht"}
             if dst.exists():
                 return {"ok": False, "error": "Datei mit diesem Namen existiert bereits"}
             src.rename(dst)
@@ -1788,8 +1808,8 @@ def create_app(
 
             return {
                 "ok": True,
-                "new_name": dst.name,
-                "name_encoded": quote(dst.name),
+                "new_name": _pre_check_relative_name(pre_dir, dst),
+                "name_encoded": quote(_pre_check_relative_name(pre_dir, dst), safe=""),
                 "duration_seconds": duration_seconds,
                 "rule_learned": rule_learned,
                 "duration_hms": _format_duration(duration_seconds),

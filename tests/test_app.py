@@ -374,6 +374,77 @@ class TestPreCheckRename:
         assert "71cd356abee68aaa" in rules
         assert "Confirmed.mp4" in rules
 
+    def test_nested_file_preview_uses_relative_path(self, dirs):
+        pre_dir = dirs["config"].parent / "pre-check"
+        nested = pre_dir / "Studio"
+        nested.mkdir(parents=True, exist_ok=True)
+        src = nested / "Nested.mp4"
+        src.write_bytes(b"x" * 1024)
+        (dirs["config"] / "ai_config.json").write_text(json.dumps({
+            "pre_check_dir": str(pre_dir),
+            "ollama_url": "",
+            "ollama_model": "llama3",
+            "stashdb_api_key": "",
+            "theporndb_api_key": "",
+        }))
+
+        app = create_app(
+            namer_config=dirs["cfg"],
+            report_output_dir=dirs["reports"],
+            helper_config_dir=dirs["config"],
+        )
+
+        with patch("namer_helper.web.app._check_system_deps"):
+            with patch("namer_helper.web.app._is_moondream_available", return_value=False):
+                with patch("namer_helper.namer_bridge.hasher.compute_oshash",
+                           return_value="71cd356abee68aaa"):
+                    with TestClient(app, raise_server_exceptions=False) as c:
+                        page = c.get("/pre-check")
+                        video = c.get("/pre-check/video", params={"name": "Studio/Nested.mp4"})
+
+        assert page.status_code == 200
+        assert "Studio/Nested.mp4" in page.text
+        assert "Studio%2FNested.mp4" in page.text
+        assert video.status_code == 200
+
+    def test_nested_rename_stays_in_same_folder(self, dirs):
+        pre_dir = dirs["config"].parent / "pre-check"
+        nested = pre_dir / "Studio"
+        nested.mkdir(parents=True, exist_ok=True)
+        src = nested / "Original.mp4"
+        src.write_bytes(b"x" * 1024)
+        (dirs["config"] / "ai_config.json").write_text(json.dumps({
+            "pre_check_dir": str(pre_dir),
+            "ollama_url": "",
+            "ollama_model": "llama3",
+            "stashdb_api_key": "",
+            "theporndb_api_key": "",
+        }))
+
+        app = create_app(
+            namer_config=dirs["cfg"],
+            report_output_dir=dirs["reports"],
+            helper_config_dir=dirs["config"],
+        )
+
+        with patch("namer_helper.web.app._check_system_deps"):
+            with patch("namer_helper.web.app._is_moondream_available", return_value=False):
+                with patch("namer_helper.namer_bridge.hasher.compute_oshash",
+                           return_value="71cd356abee68aaa"):
+                    with TestClient(app, raise_server_exceptions=False) as c:
+                        r = c.post(
+                            "/pre-check/rename",
+                            params={"name": "Studio/Original.mp4", "new_name": "Confirmed.mp4"},
+                        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert data["new_name"] == "Studio/Confirmed.mp4"
+        assert data["name_encoded"] == "Studio%2FConfirmed.mp4"
+        assert not src.exists()
+        assert (nested / "Confirmed.mp4").exists()
+
 
 class TestPreCheckCache:
     def test_invalidate_accepts_oshash(self, client):
