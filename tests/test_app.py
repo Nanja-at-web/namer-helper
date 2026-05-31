@@ -14,7 +14,12 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from namer_helper.web.app import create_app, _list_ollama_models, _safe_path
+from namer_helper.web.app import (
+    create_app,
+    _list_ollama_models,
+    _namer_path_preview,
+    _safe_path,
+)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -129,6 +134,106 @@ class TestSafePath:
     def test_absolute_path_component_blocked(self, tmp_path):
         result = _safe_path(tmp_path, "/etc/passwd")
         assert result is None
+
+
+class TestNamerPathPreview:
+    def test_scene_uses_generic_relative_path_template(self, tmp_path):
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(
+            "[watchdog]\n"
+            "new_relative_path_name={full_site}/{full_site} - {date} - {name} [WEBDL-{resolution}].{ext}\n"
+            "new_relative_path_name_movie={full_site}/Movies/{name} ({year}).{ext}\n"
+            "new_relative_path_name_jav=JAV/{full_site}/{name}.{ext}\n",
+            encoding="utf-8",
+        )
+
+        preview = _namer_path_preview(
+            cfg,
+            original_name="Input.mp4",
+            hashes={"resolution": "720p"},
+            filename_parsed={},
+            tpdb_scenes=[{
+                "title": "Scene Title",
+                "date": "2024-01-02",
+                "site": "Example Studio",
+                "performers": ["A Performer"],
+                "match_method": "scene",
+            }],
+        )
+
+        assert preview is not None
+        assert preview["path"] == (
+            "Example Studio/Example Studio - 2024-01-02 - "
+            "Scene Title [WEBDL-720p].mp4"
+        )
+        assert preview["template_key"] == "new_relative_path_name"
+        assert preview["type"] == "scene"
+
+    def test_movie_uses_movie_specific_template(self, tmp_path):
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(
+            "[watchdog]\n"
+            "new_relative_path_name={full_site}/{name}.{ext}\n"
+            "new_relative_path_name_movie={full_site}/Movies/{name} ({year}).{ext}\n",
+            encoding="utf-8",
+        )
+
+        preview = _namer_path_preview(
+            cfg,
+            original_name="Input.mkv",
+            tpdb_movies=[{
+                "title": "Feature Movie",
+                "date": "2020-05-06",
+                "site": "Movie Studio",
+                "match_method": "movie",
+            }],
+        )
+
+        assert preview is not None
+        assert preview["path"] == "Movie Studio/Movies/Feature Movie (2020).mkv"
+        assert preview["template_key"] == "new_relative_path_name_movie"
+        assert preview["type"] == "movie"
+
+    def test_jav_uses_jav_specific_template(self, tmp_path):
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(
+            "[watchdog]\n"
+            "new_relative_path_name={full_site}/{name}.{ext}\n"
+            "new_relative_path_name_jav=JAV/{full_site}/{name}.{ext}\n",
+            encoding="utf-8",
+        )
+
+        preview = _namer_path_preview(
+            cfg,
+            original_name="RCT-769.mp4",
+            filename_parsed={"jav_code": "RCT-769"},
+            tpdb_scenes=[{
+                "title": "JAV Scene",
+                "date": "2015-08-20",
+                "site": "ROCKET",
+                "match_method": "jav",
+            }],
+        )
+
+        assert preview is not None
+        assert preview["path"] == "JAV/ROCKET/JAV Scene.mp4"
+        assert preview["template_key"] == "new_relative_path_name_jav"
+        assert preview["type"] == "jav"
+
+    def test_unsafe_relative_template_is_rejected(self, tmp_path):
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(
+            "[watchdog]\nnew_relative_path_name={full_site}/../{name}.{ext}\n",
+            encoding="utf-8",
+        )
+
+        preview = _namer_path_preview(
+            cfg,
+            original_name="Input.mp4",
+            tpdb_scenes=[{"title": "Scene Title", "site": "Studio"}],
+        )
+
+        assert preview is None
 
 
 # ── alias integration in pre_check_lookup ─────────────────────────────────────

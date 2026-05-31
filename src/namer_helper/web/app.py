@@ -38,6 +38,7 @@ _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
 _SINGLE_LOOKUP_TIMEOUT_SECONDS = 600   # keep browser lookup aligned with server-scan per-file timeout
 _NON_TEXT_OLLAMA_MODELS = ("all-minilm", "mxbai-embed", "nomic-embed", "moondream")
+_NAMER_TEMPLATE_RE = re.compile(r"\{([^{}]+)\}")
 
 
 def _is_ignored_file(path: Path) -> bool:
@@ -147,6 +148,121 @@ def _write_cfg_value(cfg_path: Path, key: str, value: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _compact_name(value: object) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip())
+
+
+def _safe_preview_value(value: object) -> str:
+    text = str(value or "").replace("/", " ").replace("\\", " ")
+    text = re.sub(r'[<>:"|?*\x00-\x1f]', "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _safe_relative_preview(path_text: str) -> str | None:
+    normalized = path_text.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+        return None
+    normalized = re.sub(r"/+", "/", normalized).strip("/")
+    parts = [p.strip() for p in normalized.split("/") if p.strip()]
+    if not parts:
+        return None
+    if any(part in {".", ".."} for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def _render_namer_template(template: str, values: dict[str, object]) -> str | None:
+    if not template.strip():
+        return None
+
+    def repl(match: re.Match) -> str:
+        expr = match.group(1).strip()
+        key = expr.split(":", 1)[0].split("|", 1)[0].strip()
+        value = values.get(key)
+        return _safe_preview_value(value)
+
+    rendered = _NAMER_TEMPLATE_RE.sub(repl, template)
+    rendered = re.sub(r"\s+", " ", rendered)
+    rendered = re.sub(r"\s*/\s*", "/", rendered)
+    rendered = re.sub(r"\s+-\s+(?=(?:/|\.|$))", "", rendered)
+    rendered = rendered.replace("[]", "")
+    return _safe_relative_preview(rendered)
+
+
+def _namer_template_for_type(cfg_path: Path, media_type: str) -> tuple[str, str]:
+    specific = _read_cfg_value(cfg_path, f"new_relative_path_name_{media_type}")
+    if specific:
+        return specific, f"new_relative_path_name_{media_type}"
+    generic = _read_cfg_value(cfg_path, "new_relative_path_name")
+    return generic, "new_relative_path_name"
+
+
+def _namer_path_preview(
+    cfg_path: Path,
+    *,
+    original_name: str,
+    hashes: dict | None = None,
+    filename_parsed: dict | None = None,
+    tpdb_scenes: list[dict] | None = None,
+    tpdb_movies: list[dict] | None = None,
+) -> dict | None:
+    scene = (tpdb_scenes or [None])[0]
+    movie = (tpdb_movies or [None])[0]
+    parsed = filename_parsed or {}
+    source = movie or scene
+    if not source:
+        return None
+
+    match_method = str(source.get("match_method") or "")
+    media_type = "movie" if movie else "jav" if match_method == "jav" or parsed.get("jav_code") else "scene"
+    template, template_key = _namer_template_for_type(cfg_path, media_type)
+    if not template:
+        return None
+
+    ext = Path(original_name).suffix.lstrip(".")
+    site = source.get("site") or source.get("studio") or source.get("network") or parsed.get("studio") or ""
+    network = source.get("network") or ""
+    name = source.get("title") or parsed.get("cleaned") or Path(original_name).stem
+    date = source.get("date") or parsed.get("date") or ""
+    performers = source.get("performers") or parsed.get("performers") or []
+    values = {
+        "date": date,
+        "year": str(date)[:4] if date else "",
+        "description": "",
+        "name": name,
+        "scene": name,
+        "site": _compact_name(site),
+        "full_site": site,
+        "parent": _compact_name(network),
+        "full_parent": network,
+        "network": _compact_name(network),
+        "full_network": network,
+        "performers": ", ".join(performers),
+        "all_performers": ", ".join(performers),
+        "performer-sites": "",
+        "all_performer-sites": "",
+        "act": "",
+        "ext": ext,
+        "source_file_name": Path(original_name).name,
+        "source_file_stem": Path(original_name).stem,
+        "video_codec": "",
+        "audio_codec": "",
+        "trans": "",
+        "type": "movie" if media_type == "movie" else "scene",
+        "resolution": (hashes or {}).get("resolution") or parsed.get("resolution") or "",
+        "vr": "",
+    }
+    rendered = _render_namer_template(template, values)
+    if not rendered:
+        return None
+    return {
+        "path": rendered,
+        "template": template,
+        "template_key": template_key,
+        "type": media_type,
+    }
 
 
 def _safe_path(directory: Path, name: str) -> Path | None:
@@ -1420,11 +1536,20 @@ def create_app(
                 dest_duplicate=dest_duplicate,
                 local_duration=hashes.get("duration"),
             )
+            namer_path_preview = _namer_path_preview(
+                namer_config,
+                original_name=name,
+                hashes=hashes,
+                filename_parsed=filename_parsed,
+                tpdb_scenes=tpdb_scenes,
+                tpdb_movies=tpdb_movies,
+            )
             result = {
                 "ok": True,
                 "hashes": hashes,
                 "filename_parsed": filename_parsed,
                 "identification": identification,
+                "namer_path_preview": namer_path_preview,
                 "stashdb_scenes": stashdb_scenes,
                 "stashdb_error": stashdb_error,
                 "stashdb_suggested": stashdb_suggested,

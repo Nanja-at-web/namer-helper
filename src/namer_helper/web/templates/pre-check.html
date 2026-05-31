@@ -431,6 +431,19 @@ function renderLookupResult(json, encodedName, rowIndex) {
     html += `</div>`;
   }
 
+  // Namer-core Zielpfad-Vorschau: read-only, keine Dateioperation
+  if (json.namer_path_preview && json.namer_path_preview.path) {
+    const np = json.namer_path_preview;
+    html += `<div class="mb-2 bg-slate-50 border border-slate-200 rounded px-2 py-1.5">`;
+    html += `<div class="flex items-center gap-2 mb-1">`;
+    html += `<span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Namer Zielpfad</span>`;
+    html += `<span class="text-xs text-slate-400">${escHtml(np.template_key || '')}</span>`;
+    html += `<span class="text-xs text-slate-400">${escHtml(np.type || '')}</span>`;
+    html += `</div>`;
+    html += `<div class="text-xs font-mono text-slate-700 break-all">${escHtml(np.path)}</div>`;
+    html += `</div>`;
+  }
+
   // Cache indicator + refresh button (always shown)
   html += `<div class="flex items-center gap-2 mb-2">`;
   if (json.cached) {

@@ -16,7 +16,7 @@ CACHE_DIR = Path("/opt/namer-helper/lookup-cache")
 
 # Bump when the lookup pipeline changes significantly.
 # Any entry with a different version is discarded and re-fetched.
-CACHE_VERSION = 16
+CACHE_VERSION = 17
 
 _REQUIRED_SCENE_KEYS = {"image"}  # bump this set when scene schema changes
 _TIMEOUT_MARKERS = ("timeout", "timed out", "read timed out", "connect timeout")
