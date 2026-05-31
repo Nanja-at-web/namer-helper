@@ -23,6 +23,7 @@ from dataclasses import dataclass
 # Standard JAV codes.  \d{2,4} keeps ABP-12 … ABP-9999 and rejects ABP-12345.
 # Extend to \d{2,5} only if a confirmed 5-digit code is found in the wild.
 _JAV_RE = re.compile(r"\b([A-Z]{2,6}-\d{2,4})\b", re.IGNORECASE)
+_JAV_LOOSE_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2,4})[ ._-]?(\d{2,4})(?![A-Z0-9])", re.IGNORECASE)
 
 # FC2-PPV: distinct structure — letter prefix followed by 6-8 digit number.
 _FC2_RE = re.compile(r"\b(FC2-PPV-\d{6,8})\b", re.IGNORECASE)
@@ -54,6 +55,12 @@ def detect(filename: str) -> JavCode | None:
         studio, number = code.split("-", 1)
         return JavCode(code=code, studio=studio, number=number)
 
+    m = _JAV_LOOSE_RE.search(filename)
+    if m:
+        studio = m.group(1).upper()
+        number = m.group(2)
+        return JavCode(code=f"{studio}-{number}", studio=studio, number=number)
+
     return None
 
 
@@ -76,6 +83,14 @@ def detect_all(filename: str) -> list[JavCode]:
         if code not in seen:
             seen.add(code)
             studio, number = code.split("-", 1)
+            entries.append((m.start(), JavCode(code=code, studio=studio, number=number)))
+
+    for m in _JAV_LOOSE_RE.finditer(filename):
+        studio = m.group(1).upper()
+        number = m.group(2)
+        code = f"{studio}-{number}"
+        if code not in seen:
+            seen.add(code)
             entries.append((m.start(), JavCode(code=code, studio=studio, number=number)))
 
     entries.sort(key=lambda x: x[0])

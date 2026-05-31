@@ -90,6 +90,22 @@ class TestDetect:
         assert r is not None
         assert r.code == "SSIS-456"
 
+    def test_space_separated_code_normalised(self):
+        r = detect("FAA 225 kdnapping Shta and locking him in a closed room.mp4")
+        assert r is not None
+        assert r.code == "FAA-225"
+        assert r.studio == "FAA"
+        assert r.number == "225"
+
+    def test_dot_and_underscore_separated_code_normalised(self):
+        assert detect("FAA.225.Scene.mp4").code == "FAA-225"
+        assert detect("FAA_225.Scene.mp4").code == "FAA-225"
+
+    def test_compact_code_normalised(self):
+        r = detect("FAA225.Scene.mp4")
+        assert r is not None
+        assert r.code == "FAA-225"
+
     def test_first_code_returned_when_multiple(self):
         r = detect("ABP-123.MIDV-456.mp4")
         assert r is not None
@@ -116,6 +132,9 @@ class TestDetect:
     def test_word_boundary_prevents_partial_match(self):
         # "ABP-1234X" — X directly attached, no word boundary after digits
         assert detect("ABP-1234X.mp4") is None
+
+    def test_does_not_match_letters_attached_after_number(self):
+        assert detect("Jav Guru480p.mp4") is None
 
 
 # ── detect_all() ──────────────────────────────────────────────────────────────
@@ -146,3 +165,7 @@ class TestDetectAll:
         codes = detect_all("ABP-123.title.ABP-123.mp4")
         abp_codes = [c for c in codes if c.code == "ABP-123"]
         assert len(abp_codes) == 1
+
+    def test_detect_all_includes_loose_codes(self):
+        codes = detect_all("FAA 225 title ABP123.mp4")
+        assert [c.code for c in codes] == ["FAA-225", "ABP-123"]
