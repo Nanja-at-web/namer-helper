@@ -109,6 +109,41 @@ def test_identification_rejects_cross_confirmed_duration_mismatch():
     assert any("Dauerkonflikt" in signal for signal in result["signals"])
 
 
+def test_identification_rejects_loose_cross_confirm_duration_for_short_scene():
+    result = build_identification(
+        original_name="short_scene.mp4",
+        stashdb_scenes=[{
+            "title": "Shared Scene Title",
+            "date": "2024-01-02",
+            "studio": "Studio A",
+            "performers": ["Performer A", "Performer B"],
+            "duration": 974,
+            "match_via": "context",
+        }],
+        stashdb_suggested="Studio A - 2024-01-02 - Shared Scene Title.mp4",
+        tpdb_scenes=[{
+            "title": "Shared Scene Title",
+            "date": "2024-01-02",
+            "site": "Studio A",
+            "performers": ["Performer A", "Performer B"],
+            "duration": 974,
+            "score": 70,
+            "match_method": "title",
+        }],
+        tpdb_suggested="Studio A - 2024-01-02 - Shared Scene Title.mp4",
+        ollama=None,
+        filename_parsed={"performers": ["Performer A", "Performer B"]},
+        dest_duplicate=None,
+        local_duration=1134,
+    )
+
+    assert result["status"] == "possible"
+    assert result["action"] == "review"
+    assert result["confidence"] <= 0.35
+    assert result["suggested_name"] is None
+    assert any("Dauerkonflikt" in signal for signal in result["signals"])
+
+
 def test_identification_does_not_cross_confirm_on_duration_only():
     result = build_identification(
         original_name="wrong_context.mp4",

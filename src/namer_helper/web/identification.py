@@ -85,6 +85,28 @@ def _duration_conflict(local_duration: int | None, scene_duration: int | None) -
     return True, f"Dauerkonflikt: lokal {local_min} min, Treffer {scene_min} min"
 
 
+def _strict_duration_conflict(local_duration: int | None, *scene_durations: int | None) -> tuple[bool, str | None]:
+    """Stricter duration gate for cross-source context matches.
+
+    Broad duration tolerance is useful to avoid rejecting imperfect database
+    metadata, but it is too loose for auto-confirming two context hits.  A
+    short scene that differs by multiple minutes must stay manual review.
+    """
+    if not local_duration:
+        return False, None
+    candidates = [int(v) for v in scene_durations if v]
+    if not candidates:
+        return False, None
+    best = min(candidates, key=lambda v: abs(local_duration - v))
+    diff = abs(local_duration - best)
+    tolerance = min(300, max(90, int(min(local_duration, best) * 0.05)))
+    if diff <= tolerance:
+        return False, f"Dauer plausibel ±{diff}s"
+    local_min = round(local_duration / 60)
+    scene_min = round(best / 60)
+    return True, f"Dauerkonflikt: lokal {local_min} min, Treffer {scene_min} min (±{diff}s)"
+
+
 def _scene_duration(scene: dict | None) -> int | None:
     if not scene:
         return None
@@ -106,7 +128,11 @@ def _cross_confirm(
     if not stash_scene or not tpdb_scene:
         return False, signals, False
 
-    duration_conflict, duration_signal = _duration_conflict(local_duration, _scene_duration(tpdb_scene) or _scene_duration(stash_scene))
+    duration_conflict, duration_signal = _strict_duration_conflict(
+        local_duration,
+        _scene_duration(tpdb_scene),
+        _scene_duration(stash_scene),
+    )
     if duration_signal:
         signals.append(duration_signal)
 
