@@ -347,6 +347,46 @@ def search_embedding_cmd(query: str, ollama_url: str, model: str, persist_dir: s
             logger.info(f"  {' | '.join(details)}")
 
 
+@main.command("generate-training")
+@click.option(
+    "--rules",
+    "rules_path",
+    default="/etc/namer-helper/rules.yaml",
+    show_default=True,
+    help="Rule-Learning YAML mit bestätigten Renames",
+)
+@click.option(
+    "--output",
+    "output_path",
+    default="/etc/namer-helper/training/rules.jsonl",
+    show_default=True,
+    help="Ausgabe-Datei im JSONL-Format",
+)
+@click.option(
+    "--variants",
+    default=12,
+    show_default=True,
+    help="Varianten pro bestätigter Regel",
+)
+@click.option(
+    "--seed",
+    default=0,
+    show_default=True,
+    help="Seed für deterministische Varianten",
+)
+def generate_training_cmd(rules_path: str, output_path: str, variants: int, seed: int) -> None:
+    """C2: Trainingsdaten aus bestätigten Rule-Learning-Renames erzeugen."""
+    from namer_helper.training.generator import generate_from_rules_file
+
+    count = generate_from_rules_file(
+        Path(rules_path),
+        Path(output_path),
+        variants_per_rule=variants,
+        seed=seed,
+    )
+    logger.success(f"Trainingsbeispiele geschrieben: {count} -> {output_path}")
+
+
 @main.command("stash-search")
 @click.argument("filenames", nargs=-1, required=False)
 @click.option(

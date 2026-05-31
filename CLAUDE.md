@@ -31,11 +31,18 @@
 namer-helper/
 ├── src/namer_helper/
 │   ├── __init__.py                    # version = "0.1.0"
-│   ├── cli.py                         # CLI: serve, report, analyze, stash-search
+│   ├── cli.py                         # CLI: serve, report, analyze, stash-search, embeddings, training
+│   ├── aliases.py                     # Studio-/Performer-Alias-Auflösung
+│   ├── embedding.py                   # Phase 4 / B4: ChromaDB + Ollama Embeddings
+│   ├── jav.py                         # JAV-Code-Erkennung (ABP-123, FC2-PPV-...)
+│   ├── normalize.py                   # Dateiname normalisieren vor Parser/Ollama
 │   ├── namer_bridge/
 │   │   ├── __init__.py
 │   │   ├── config_reader.py           # liest namer.cfg [watchdog]-Sektion
 │   │   └── log_parser.py              # parst .namer_failed.log → FailedMatch
+│   ├── training/
+│   │   ├── __init__.py
+│   │   └── generator.py               # Phase 4 / C2: JSONL aus bestätigten Rules
 │   ├── ollama_bridge/
 │   │   ├── __init__.py
 │   │   ├── client.py                  # HTTP-Client /api/generate, stream=False
@@ -49,7 +56,10 @@ namer-helper/
 │   │   └── renderer.py                # Markdown + JSON, Anonymisierung (sha256)
 │   └── web/
 │       ├── __init__.py
-│       ├── app.py                     # FastAPI Factory, Port 6981
+│       ├── app.py                     # FastAPI Factory, Port 6981, Pre-Check Phase 1-4
+│       ├── lookup_cache.py            # oshash-basierter Lookup-Cache
+│       ├── metadata_cache.py          # Dauer/oshash/processed Cache
+│       ├── scan_status.py             # Server-Scan Status/Pause/Stop
 │       ├── mounts.py                  # SMB/NFS: MountConfig, /proc/mounts
 │       └── templates/
 │           ├── base.html              # Tailwind CDN, Nav: Dashboard/Watch/Failed/Dest/Mounts/LiveLog
@@ -78,7 +88,6 @@ namer-helper/
 **Bestätigte FEHLENDE/OPTIONALE Dateien:**
 
 ```
-src/namer_helper/training/  # Phase 4 / C2 Trainingsdaten-Generator – noch nicht erstellt
 modelfiles/                 # Phase 4 / C1 Ollama-Modelfile – noch nicht erstellt
 docker/docker-compose.yml   # docker-compose.yml ist im ROOT, nicht in docker/
 ```
@@ -92,6 +101,10 @@ namer-helper serve          # FastAPI Dashboard auf Port 6981
 namer-helper report         # fehlgeschlagene Treffer → Markdown/JSON Report
 namer-helper analyze        # Dateinamen via Ollama analysieren
 namer-helper stash-search   # Dateinamen in lokaler StashApp suchen
+namer-helper index-tpdb     # TPDB JSON/JSONL in ChromaDB indexieren
+namer-helper index-tpdb-cache # TPDB-Treffer aus Lookup-Cache indexieren
+namer-helper search-embedding # Embedding-Index testen
+namer-helper generate-training # C2 JSONL aus bestätigten Regeln erzeugen
 ```
 
 ### serve
@@ -1180,7 +1193,8 @@ Schritt A – Deploy/Live-Verifikation stable/precheck:
 Schritt B – Phase 4 / B4 optionaler Embedding-Fallback:
   src/namer_helper/embedding.py
   → ChromaDB nur optional importieren
-  → Ollama nomic-embed-text nutzen, wenn vorhanden
+  → bevorzugtes Ollama-Embedding-Modell nutzen; fallback auf installierte Embedding-Modelle
+  → Live-Hinweis: nomic-embed-text brach auf CT 111 mit EOF ab, all-minilm funktioniert
   → kein Hard-Fail ohne chromadb oder Ollama-Modell
   → nur als letzter Suchweg nach Hash/JAV/Movie/Kontext
   ✓ implementiert in stable/precheck
@@ -1190,6 +1204,7 @@ Schritt C – Phase 4 / C2 Trainingsdaten-Generator:
   → JSONL aus bestätigten Rule-Learning-/Rename-Daten
   → Varianten: Leet, Separatoren, Noise, Aliases
   → keine Fantasie-Labels ohne bestätigte Quelle
+  ✓ implementiert in stable/precheck
 
 Schritt D – Phase 4 / C1 Infrastruktur:
   training/README.md
@@ -1403,7 +1418,7 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 
 ## Implementierungsstand stable/precheck (laufend aktualisiert) [E][H]
 
-**Branch:** `stable/precheck` | **Tests:** 334 | **Letzter Commit:** `fba4b7a` (2026-05-30)
+**Branch:** `stable/precheck` | **Tests:** 369 lokal nach C2 | **Stand:** 2026-05-31
 
 ### Abgeschlossene Schritte
 
@@ -1419,15 +1434,16 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 | 6 | `jav.py`: JAV-Code-Erkennung + TPDB `/jav` Lookup | ✓ |
 | 7 | `analyzer.py`: `_STRIP_RE` entfernt, nutzt `normalize()` | ✓ |
 | MVP4 | `rules/`: bestätigte Renames als Hash-Regeln lernen | ✓ |
+| B4 | `embedding.py`: ChromaDB/Ollama Embedding-Fallback + Cache-Index | ✓ |
+| UI | Pre-Check Dauer, Status, Cached-Filter, Scan Pause/Weiter/Stop | ✓ |
+| TPDB | REST `/scenes`, REST `/movies`, REST `/jav`, Fingerprint-Fallbacks | ✓ |
+| C2 | `training/generator.py`: JSONL aus bestätigten Rules | ✓ |
 | T | Tests: filename_parser, hasher, StashDB, TPDB, Rules, Identification | ✓ |
 
 ### Noch ausstehend
 
 | Schritt | Modul | Priorität |
 |---------|-------|-----------|
-| Deploy | `stable/precheck` auf Proxmox/LXC live verifizieren | Hoch |
-| Deploy | Phase 4 / B4 live verifizieren, sobald `chromadb` + `nomic-embed-text` installiert sind | Mittel |
-| C2 | Trainingsdaten-Generator aus bestätigten Entscheidungen | Mittel |
 | C1 | Fine-Tuning-Infrastruktur; echtes Training extern | Niedrig |
 
 ### Wichtige Architekturentscheidungen
@@ -1446,3 +1462,8 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
   - bestätigter Pre-Check-Rename schreibt best-effort nach `/etc/namer-helper/rules.yaml`
 - **JAV-Erkennung** läuft im Pre-Check vor generischer TPDB-Kontextsuche
   - `ABP-123`/FC2-Codes gehen direkt über TPDB REST `/jav`
+- **Embedding-Fallback** ist optional und fehlertolerant
+  - Live nutzt `all-minilm`/`mxbai-embed-large`, weil `nomic-embed-text` im Ollama-LXC mit EOF abbricht
+  - Pre-Check läuft auch ohne ChromaDB/Ollama-Embedding weiter
+- **C2 Trainingsdaten** entstehen nur aus bestätigten Rule-Learning-Entscheidungen
+  - keine erfundenen Labels; Output ist immer der bestätigte Ziel-Dateiname
