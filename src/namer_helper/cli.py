@@ -235,6 +235,62 @@ def index_tpdb_cmd(source: Path, ollama_url: str, model: str, persist_dir: str) 
     logger.success(f"Indexiert: {len(docs)} TPDB-Dokument(e) mit {resolved_model} -> {persist_dir}")
 
 
+@main.command("search-embedding")
+@click.argument("query")
+@click.option(
+    "--ollama-url",
+    default="http://localhost:11434",
+    show_default=True,
+    help="Ollama-Server URL",
+)
+@click.option(
+    "--model",
+    default="nomic-embed-text",
+    show_default=True,
+    help="Bevorzugtes Embedding-Modell",
+)
+@click.option(
+    "--persist-dir",
+    default="/etc/namer-helper/embeddings",
+    show_default=True,
+    help="ChromaDB-Verzeichnis",
+)
+@click.option(
+    "--limit",
+    default=3,
+    show_default=True,
+    help="Maximale Trefferanzahl",
+)
+def search_embedding_cmd(query: str, ollama_url: str, model: str, persist_dir: str, limit: int) -> None:
+    """Lokalen Embedding-Index direkt durchsuchen."""
+    from namer_helper.embedding import search_scene_index
+
+    result = search_scene_index(
+        query,
+        ollama_url=ollama_url,
+        persist_dir=Path(persist_dir),
+        model=model,
+        limit=limit,
+    )
+    if result.error:
+        logger.error(result.error)
+        raise click.Abort()
+    if not result.found:
+        logger.warning("Keine Embedding-Treffer")
+        return
+
+    for hit in result.hits:
+        logger.info(f"{hit.score:.3f}  {hit.id}  {hit.title}")
+        metadata = hit.metadata
+        details = []
+        for key in ("site", "date", "duration", "sku", "performers", "url"):
+            value = metadata.get(key)
+            if value not in (None, "", []):
+                details.append(f"{key}: {value}")
+        if details:
+            logger.info(f"  {' | '.join(details)}")
+
+
 @main.command("stash-search")
 @click.argument("filenames", nargs=-1, required=False)
 @click.option(
