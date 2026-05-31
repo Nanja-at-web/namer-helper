@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -204,6 +205,45 @@ class TestScanStatusRoutes:
     def test_scan_stop_returns_json(self, client):
         r = client.post("/pre-check/scan/stop")
         assert r.status_code == 200
+
+
+class TestPreCheckRename:
+    def test_rename_learns_rule_even_without_client_oshash(self, dirs):
+        pre_dir = dirs["config"].parent / "pre-check"
+        pre_dir.mkdir(exist_ok=True)
+        src = pre_dir / "Original.mp4"
+        src.write_bytes(b"x" * 1024)
+        (dirs["config"] / "ai_config.json").write_text(json.dumps({
+            "pre_check_dir": str(pre_dir),
+            "ollama_url": "",
+            "ollama_model": "llama3",
+            "stashdb_api_key": "",
+            "theporndb_api_key": "",
+        }))
+
+        app = create_app(
+            namer_config=dirs["cfg"],
+            report_output_dir=dirs["reports"],
+            helper_config_dir=dirs["config"],
+        )
+
+        with patch("namer_helper.web.app._check_system_deps"):
+            with patch("namer_helper.web.app._is_moondream_available", return_value=False):
+                with patch("namer_helper.namer_bridge.hasher.compute_oshash",
+                           return_value="71cd356abee68aaa"):
+                    with TestClient(app, raise_server_exceptions=False) as c:
+                        r = c.post(
+                            "/pre-check/rename",
+                            params={"name": "Original.mp4", "new_name": "Confirmed.mp4"},
+                        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert data["rule_learned"] is True
+        rules = (dirs["config"] / "rules.yaml").read_text(encoding="utf-8")
+        assert "71cd356abee68aaa" in rules
+        assert "Confirmed.mp4" in rules
 
 
 # ── settings save/load ────────────────────────────────────────────────────────

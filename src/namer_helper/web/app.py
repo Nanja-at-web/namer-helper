@@ -1507,6 +1507,13 @@ def create_app(
             except Exception:
                 metadata_cache = None  # type: ignore[assignment]
                 cached_meta = {}
+            if not oshash:
+                try:
+                    from namer_helper.namer_bridge.hasher import compute_oshash
+
+                    oshash = compute_oshash(src) or ""
+                except Exception:
+                    oshash = ""
             suggested = new_name.strip()
             if Path(suggested).suffix.lower() not in _VIDEO_EXTS:
                 suggested = suggested + src.suffix
