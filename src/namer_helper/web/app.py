@@ -179,8 +179,18 @@ def _render_namer_template(template: str, values: dict[str, object]) -> str | No
 
     def repl(match: re.Match) -> str:
         expr = match.group(1).strip()
-        key = expr.split(":", 1)[0].split("|", 1)[0].strip()
+        key, _, filter_expr = expr.partition(":")
+        key = key.split("|", 1)[0].strip()
         value = values.get(key)
+        if filter_expr.strip():
+            try:
+                from jinja2.sandbox import SandboxedEnvironment
+
+                env = SandboxedEnvironment(autoescape=False)
+                rendered_value = env.from_string("{{ value" + filter_expr.strip() + " }}").render(value=value)
+                return _safe_preview_value(rendered_value)
+            except Exception:
+                pass
         return _safe_preview_value(value)
 
     rendered = _NAMER_TEMPLATE_RE.sub(repl, template)
@@ -1794,6 +1804,7 @@ def create_app(
                 metadata_cache.set(dst, cached_meta)
                 metadata_cache.invalidate(src)
             duration_seconds = int(cached_meta.get("duration_seconds") or 0)
+            relative_dst_name = _pre_check_relative_name(pre_dir, dst)
 
             # Rule learning: persist the confirmed oshash → new_name mapping
             rule_learned = False
@@ -1803,7 +1814,7 @@ def create_app(
                     rule_learned = learn_rule(
                         helper_config_dir / "rules.yaml",
                         oshash=oshash,
-                        suggested_name=dst.name,
+                        suggested_name=relative_dst_name,
                         tpdb_id=tpdb_id or None,
                         source="user_confirmed",
                     )
@@ -1812,8 +1823,8 @@ def create_app(
 
             return {
                 "ok": True,
-                "new_name": _pre_check_relative_name(pre_dir, dst),
-                "name_encoded": quote(_pre_check_relative_name(pre_dir, dst), safe=""),
+                "new_name": relative_dst_name,
+                "name_encoded": quote(relative_dst_name, safe=""),
                 "duration_seconds": duration_seconds,
                 "rule_learned": rule_learned,
                 "duration_hms": _format_duration(duration_seconds),

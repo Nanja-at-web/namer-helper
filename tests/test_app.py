@@ -235,6 +235,27 @@ class TestNamerPathPreview:
 
         assert preview is None
 
+    def test_jinja_filters_in_namer_template_are_applied(self, tmp_path):
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(
+            "[watchdog]\n"
+            "new_relative_path_name={site:|lower}/{name:|title|replace(' ', '.')}.{ext}\n",
+            encoding="utf-8",
+        )
+
+        preview = _namer_path_preview(
+            cfg,
+            original_name="Input.mp4",
+            tpdb_scenes=[{
+                "title": "scene title",
+                "site": "Example Studio",
+                "match_method": "scene",
+            }],
+        )
+
+        assert preview is not None
+        assert preview["path"] == "examplestudio/Scene.Title.mp4"
+
 
 # ── alias integration in pre_check_lookup ─────────────────────────────────────
 
@@ -445,6 +466,8 @@ class TestPreCheckRename:
         assert data["name_encoded"] == "Studio%2FConfirmed.mp4"
         assert not src.exists()
         assert (nested / "Confirmed.mp4").exists()
+        rules = (dirs["config"] / "rules.yaml").read_text(encoding="utf-8")
+        assert "Studio/Confirmed.mp4" in rules
 
 
 class TestPreCheckCache:

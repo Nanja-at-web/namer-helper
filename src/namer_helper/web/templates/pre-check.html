@@ -455,12 +455,17 @@ function renderLookupResult(json, encodedName, rowIndex) {
     if (id.suggested_name) {
       const recInput = `inp-ident-${rowIndex}`;
       const preferredName = (json.namer_path_preview && json.namer_path_preview.path) ? json.namer_path_preview.path : id.suggested_name;
-      html += `<input id="${recInput}" type="text" value="${escHtml(preferredName)}"
-        class="w-full text-sm font-mono border border-white/80 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-2 focus:ring-green-300 bg-white">`;
-      html += `<div class="flex justify-end">`;
-      html += `<button onclick="doRenameFromInput('${recInput}','${encodedName}',${rowIndex})"
-        class="text-xs px-3 py-1 rounded bg-white/80 hover:bg-white text-gray-800 border border-white">✔ Besten Vorschlag übernehmen</button>`;
-      html += `</div>`;
+      const currentName = (() => { try { return decodeURIComponent(encodedName); } catch (e) { return ''; } })();
+      if (preferredName === currentName) {
+        html += `<div class="text-xs font-mono bg-white/70 border border-white/80 rounded px-2 py-1">Zielpfad passt bereits: ${escHtml(preferredName)}</div>`;
+      } else {
+        html += `<input id="${recInput}" type="text" value="${escHtml(preferredName)}"
+          class="w-full text-sm font-mono border border-white/80 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-2 focus:ring-green-300 bg-white">`;
+        html += `<div class="flex justify-end">`;
+        html += `<button onclick="doRenameFromInput('${recInput}','${encodedName}',${rowIndex})"
+          class="text-xs px-3 py-1 rounded bg-white/80 hover:bg-white text-gray-800 border border-white">✔ Besten Vorschlag übernehmen</button>`;
+        html += `</div>`;
+      }
     }
     html += `</div>`;
   }
