@@ -1218,6 +1218,7 @@ def create_app(
                                 term,
                                 ollama_url=ai_cfg.ollama_url,
                                 persist_dir=helper_config_dir / "embeddings",
+                                min_score=0.35,
                             )
                             if emb_result.found:
                                 tpdb_result = ThePornDBResult(

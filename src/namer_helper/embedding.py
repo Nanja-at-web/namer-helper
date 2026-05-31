@@ -18,6 +18,7 @@ import requests
 DEFAULT_MODEL = "nomic-embed-text"
 FALLBACK_MODELS = ("all-minilm", "mxbai-embed-large")
 DEFAULT_COLLECTION = "tpdb_scenes"
+DEFAULT_MIN_SCORE = 0.25
 _DEFAULT_CHROMA = object()
 
 
@@ -158,7 +159,13 @@ class ChromaSceneIndex:
         self._collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
         return EmbeddingResult()
 
-    def search(self, query: str, embedder: OllamaEmbedder, limit: int = 3) -> EmbeddingResult:
+    def search(
+        self,
+        query: str,
+        embedder: OllamaEmbedder,
+        limit: int = 3,
+        min_score: float = DEFAULT_MIN_SCORE,
+    ) -> EmbeddingResult:
         if not self.available:
             return EmbeddingResult(error=self.error or "ChromaDB nicht verfügbar")
         vector, err = embedder.embed(query)
@@ -168,7 +175,8 @@ class ChromaSceneIndex:
             raw = self._collection.query(query_embeddings=[vector], n_results=limit)
         except Exception as exc:
             return EmbeddingResult(error=str(exc))
-        return EmbeddingResult(hits=_parse_hits(raw))
+        hits = [hit for hit in _parse_hits(raw) if hit.score >= min_score]
+        return EmbeddingResult(hits=hits)
 
 
 def search_scene_index(
@@ -178,10 +186,11 @@ def search_scene_index(
     persist_dir: Path,
     model: str = DEFAULT_MODEL,
     limit: int = 3,
+    min_score: float = DEFAULT_MIN_SCORE,
 ) -> EmbeddingResult:
     embedder = OllamaEmbedder(base_url=ollama_url, model=model)
     index = ChromaSceneIndex(persist_dir)
-    return index.search(query, embedder, limit=limit)
+    return index.search(query, embedder, limit=limit, min_score=min_score)
 
 
 def load_scene_documents(path: Path) -> list[dict[str, Any]]:

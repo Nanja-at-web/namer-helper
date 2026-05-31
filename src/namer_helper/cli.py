@@ -310,7 +310,13 @@ def index_tpdb_cache_cmd(cache_dir: str, ollama_url: str, model: str, persist_di
     show_default=True,
     help="Maximale Trefferanzahl",
 )
-def search_embedding_cmd(query: str, ollama_url: str, model: str, persist_dir: str, limit: int) -> None:
+@click.option(
+    "--min-score",
+    default=0.25,
+    show_default=True,
+    help="Mindestscore für angezeigte Treffer",
+)
+def search_embedding_cmd(query: str, ollama_url: str, model: str, persist_dir: str, limit: int, min_score: float) -> None:
     """Lokalen Embedding-Index direkt durchsuchen."""
     from namer_helper.embedding import search_scene_index
 
@@ -320,6 +326,7 @@ def search_embedding_cmd(query: str, ollama_url: str, model: str, persist_dir: s
         persist_dir=Path(persist_dir),
         model=model,
         limit=limit,
+        min_score=min_score,
     )
     if result.error:
         logger.error(result.error)

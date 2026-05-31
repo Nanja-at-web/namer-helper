@@ -118,6 +118,17 @@ def test_embedding_index_upsert_and_search(tmp_path):
     assert result.hits[0].score > 0.8
 
 
+def test_embedding_search_filters_low_scores(tmp_path):
+    chroma = _fake_chroma()
+    index = ChromaSceneIndex(tmp_path, chroma_module=chroma)
+
+    with patch("namer_helper.embedding.requests.get", return_value=_Response({"models": [{"name": "nomic-embed-text:latest"}]})):
+        with patch("namer_helper.embedding.requests.post", return_value=_Response({"embeddings": [[0.1, 0.2, 0.3]]})):
+            result = index.search("searchable scene", OllamaEmbedder(), min_score=0.9)
+
+    assert not result.found
+
+
 def test_load_scene_documents_from_tpdb_json(tmp_path):
     source = tmp_path / "tpdb.json"
     source.write_text("""
