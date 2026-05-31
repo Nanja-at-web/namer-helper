@@ -188,6 +188,53 @@ def analyze_cmd(
             logger.info(f"Suche {i}:  {q}")
 
 
+@main.command("index-tpdb")
+@click.argument(
+    "source",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--ollama-url",
+    default="http://localhost:11434",
+    show_default=True,
+    help="Ollama-Server URL",
+)
+@click.option(
+    "--model",
+    default="nomic-embed-text",
+    show_default=True,
+    help="Bevorzugtes Embedding-Modell",
+)
+@click.option(
+    "--persist-dir",
+    default="/etc/namer-helper/embeddings",
+    show_default=True,
+    help="ChromaDB-Verzeichnis",
+)
+def index_tpdb_cmd(source: Path, ollama_url: str, model: str, persist_dir: str) -> None:
+    """TPDB JSON/JSONL-Szenen in den lokalen Embedding-Index schreiben."""
+    from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder, load_scene_documents
+
+    docs = load_scene_documents(source)
+    if not docs:
+        logger.error(f"Keine indexierbaren TPDB-Dokumente in {source}")
+        raise click.Abort()
+
+    embedder = OllamaEmbedder(base_url=ollama_url, model=model)
+    resolved_model = embedder.resolve_model()
+    if not resolved_model:
+        logger.error(f"Kein Embedding-Modell in Ollama verfügbar unter {ollama_url}")
+        raise click.Abort()
+
+    index = ChromaSceneIndex(Path(persist_dir))
+    result = index.upsert(docs, embedder)
+    if result.error:
+        logger.error(result.error)
+        raise click.Abort()
+
+    logger.success(f"Indexiert: {len(docs)} TPDB-Dokument(e) mit {resolved_model} -> {persist_dir}")
+
+
 @main.command("stash-search")
 @click.argument("filenames", nargs=-1, required=False)
 @click.option(

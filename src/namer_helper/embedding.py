@@ -7,6 +7,7 @@ missing embedding model must never break the pre-check pipeline.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -134,7 +135,15 @@ class ChromaSceneIndex:
             doc_id = str(doc.get("id") or "").strip()
             title = str(doc.get("title") or "").strip()
             description = str(doc.get("description") or "").strip()
-            text = " ".join(p for p in [title, description, str(doc.get("site") or ""), str(doc.get("performers") or "")] if p)
+            text = " ".join(p for p in [
+                title,
+                description,
+                str(doc.get("site") or ""),
+                str(doc.get("network") or ""),
+                str(doc.get("performers") or ""),
+                str(doc.get("date") or ""),
+                str(doc.get("sku") or ""),
+            ] if p)
             if not doc_id or not text.strip():
                 continue
             vector, err = embedder.embed(text)
@@ -173,6 +182,79 @@ def search_scene_index(
     embedder = OllamaEmbedder(base_url=ollama_url, model=model)
     index = ChromaSceneIndex(persist_dir)
     return index.search(query, embedder, limit=limit)
+
+
+def load_scene_documents(path: Path) -> list[dict[str, Any]]:
+    """Load TPDB scene/movie documents from JSON or JSONL exports."""
+    raw_items = _load_raw_items(path)
+    docs = [_normalize_scene_document(item) for item in raw_items if isinstance(item, dict)]
+    return [doc for doc in docs if doc.get("id") and doc.get("title")]
+
+
+def _load_raw_items(path: Path) -> list[Any]:
+    if path.suffix.lower() == ".jsonl":
+        items = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
+        return items
+
+    body = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(body, list):
+        return body
+    if isinstance(body, dict):
+        for key in ("data", "scenes", "movies", "items", "results"):
+            value = body.get(key)
+            if isinstance(value, list):
+                return value
+        return [body]
+    return []
+
+
+def _normalize_scene_document(item: dict[str, Any]) -> dict[str, Any]:
+    site = item.get("site") or item.get("studio") or {}
+    network = item.get("network") or {}
+    if isinstance(site, dict):
+        network = network or site.get("network") or site.get("parent") or {}
+        site_name = site.get("name")
+    else:
+        site_name = site
+
+    performers = []
+    for performer in item.get("performers") or []:
+        if isinstance(performer, dict):
+            name = performer.get("name") or (performer.get("performer") or {}).get("name")
+        else:
+            name = str(performer)
+        if name:
+            performers.append(str(name))
+
+    images = item.get("images") or []
+    image = item.get("image") or item.get("poster") or item.get("poster_image") or ""
+    if isinstance(images, list) and images:
+        first = images[0]
+        if isinstance(first, dict):
+            image = first.get("url") or image
+
+    posters = item.get("posters")
+    if isinstance(posters, dict):
+        image = posters.get("large") or posters.get("full") or image
+
+    scene_id = item.get("id") or item.get("uuid")
+    return {
+        "id": str(scene_id or ""),
+        "title": str(item.get("title") or item.get("name") or ""),
+        "description": str(item.get("description") or item.get("details") or item.get("synopsis") or ""),
+        "date": item.get("date") or item.get("release_date") or item.get("released"),
+        "duration": item.get("duration"),
+        "site": site_name,
+        "network": network.get("name") if isinstance(network, dict) else network,
+        "performers": performers,
+        "url": item.get("url") or "",
+        "image": image or "",
+        "sku": item.get("sku") or item.get("code") or item.get("identifier"),
+    }
 
 
 def _clean_metadata(doc: dict[str, Any]) -> dict[str, Any]:

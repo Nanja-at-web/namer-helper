@@ -1,7 +1,7 @@
 import types
 from unittest.mock import patch
 
-from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder
+from namer_helper.embedding import ChromaSceneIndex, OllamaEmbedder, load_scene_documents
 
 
 class _Response:
@@ -116,3 +116,52 @@ def test_embedding_index_upsert_and_search(tmp_path):
     assert result.hits[0].id == "scene-1"
     assert result.hits[0].title == "Semantic Scene"
     assert result.hits[0].score > 0.8
+
+
+def test_load_scene_documents_from_tpdb_json(tmp_path):
+    source = tmp_path / "tpdb.json"
+    source.write_text("""
+{
+  "data": [{
+    "uuid": "scene-1",
+    "title": "Semantic Scene",
+    "description": "Searchable description",
+    "date": "2024-01-02",
+    "duration": 1200,
+    "sku": "ABC-123",
+    "site": {"name": "Example Site", "network": {"name": "Example Network"}},
+    "performers": [{"name": "Performer A"}, {"performer": {"name": "Performer B"}}],
+    "posters": {"large": "https://example.invalid/poster.jpg"}
+  }]
+}
+""", encoding="utf-8")
+
+    docs = load_scene_documents(source)
+
+    assert docs == [{
+        "id": "scene-1",
+        "title": "Semantic Scene",
+        "description": "Searchable description",
+        "date": "2024-01-02",
+        "duration": 1200,
+        "site": "Example Site",
+        "network": "Example Network",
+        "performers": ["Performer A", "Performer B"],
+        "url": "",
+        "image": "https://example.invalid/poster.jpg",
+        "sku": "ABC-123",
+    }]
+
+
+def test_load_scene_documents_from_jsonl(tmp_path):
+    source = tmp_path / "tpdb.jsonl"
+    source.write_text(
+        '{"id":"scene-1","title":"One"}\n'
+        '{"id":"scene-2","title":"Two","performers":["Performer A"]}\n',
+        encoding="utf-8",
+    )
+
+    docs = load_scene_documents(source)
+
+    assert [d["id"] for d in docs] == ["scene-1", "scene-2"]
+    assert docs[1]["performers"] == ["Performer A"]
