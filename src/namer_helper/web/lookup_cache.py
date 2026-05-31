@@ -19,6 +19,7 @@ CACHE_DIR = Path("/opt/namer-helper/lookup-cache")
 CACHE_VERSION = 16
 
 _REQUIRED_SCENE_KEYS = {"image"}  # bump this set when scene schema changes
+_TIMEOUT_MARKERS = ("timeout", "timed out", "read timed out", "connect timeout")
 
 
 def get(oshash: str) -> dict | None:
@@ -34,6 +35,9 @@ def get(oshash: str) -> dict | None:
         # Schema check: tpdb_scenes must have image field
         scenes = data.get("tpdb_scenes") or []
         if scenes and not _REQUIRED_SCENE_KEYS.issubset(scenes[0].keys()):
+            f.unlink(missing_ok=True)
+            return None
+        if is_transient_failure(data):
             f.unlink(missing_ok=True)
             return None
         data["cached"] = True
@@ -52,6 +56,44 @@ def set(oshash: str, result: dict) -> None:
         (CACHE_DIR / f"{oshash}.json").write_text(json.dumps(entry), encoding="utf-8")
     except Exception:
         pass
+
+
+def is_transient_failure(result: dict) -> bool:
+    """Return True for timeout-only/degraded lookup results.
+
+    Stable "no match" entries may be cached, but network timeouts should be
+    retried later instead of becoming sticky cache results.
+    """
+    if _has_positive_result(result):
+        return False
+    ident = result.get("identification") or {}
+    transient_texts = [
+        result.get("error"),
+        ident.get("source"),
+        ident.get("reason"),
+        result.get("stashdb_error"),
+        result.get("tpdb_error"),
+        result.get("tpdb_movie_error"),
+    ]
+    ollama = result.get("ollama")
+    if isinstance(ollama, dict):
+        transient_texts.append(ollama.get("error"))
+    return any(_has_timeout_marker(value) for value in transient_texts)
+
+
+def _has_positive_result(result: dict) -> bool:
+    ident = result.get("identification") or {}
+    if ident.get("action") == "rename" or ident.get("suggested_name"):
+        return True
+    for key in ("stashdb_scenes", "tpdb_scenes", "tpdb_movies"):
+        if result.get(key):
+            return True
+    return bool(result.get("stashdb_suggested") or result.get("tpdb_suggested") or result.get("tpdb_movie_suggested"))
+
+
+def _has_timeout_marker(value: object) -> bool:
+    text = str(value or "").lower()
+    return any(marker in text for marker in _TIMEOUT_MARKERS)
 
 
 def invalidate(oshash: str) -> bool:

@@ -1382,7 +1382,8 @@ def create_app(
                 "dest_duplicate": dest_duplicate,
             }
             if oshash:
-                lookup_cache.set(oshash, result)
+                if not lookup_cache.is_transient_failure(result):
+                    lookup_cache.set(oshash, result)
             return result
         except Exception as exc:
             return {
