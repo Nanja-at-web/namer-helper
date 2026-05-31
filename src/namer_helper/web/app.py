@@ -756,6 +756,21 @@ def create_app(
                 cached_meta = {}
             duration_seconds = int(cached_meta.get("duration_seconds") or 0)
             processed = bool(cached_meta.get("processed"))
+            lookup_cached = False
+            try:
+                from namer_helper.namer_bridge.hasher import compute_oshash
+                from namer_helper.web import lookup_cache, metadata_cache
+
+                oshash = str(cached_meta.get("oshash") or "")
+                if not oshash:
+                    oshash = compute_oshash(f) or ""
+                    if oshash:
+                        updated_meta = dict(cached_meta)
+                        updated_meta["oshash"] = oshash
+                        metadata_cache.set(f, updated_meta)
+                lookup_cached = bool(oshash and lookup_cache.get(oshash))
+            except Exception:
+                lookup_cached = False
             items.append({
                 "name": f.name,
                 "name_encoded": quote(f.name),
@@ -765,6 +780,7 @@ def create_app(
                 "duration_hms": _format_duration(duration_seconds),
                 "duration_cached": bool(duration_seconds),
                 "processed": processed,
+                "lookup_cached": lookup_cached,
             })
         return items
 
@@ -811,7 +827,9 @@ def create_app(
             loop = asyncio.get_running_loop()
             info = await loop.run_in_executor(None, get_video_info, video_path)
             seconds = int(info.get("duration") or 0)
-            metadata_cache.set(video_path, {"duration_seconds": seconds})
+            updated_meta = dict(cached_meta)
+            updated_meta["duration_seconds"] = seconds
+            metadata_cache.set(video_path, updated_meta)
             return {"ok": True, "cached": False, "duration_seconds": seconds, "duration_hms": _format_duration(seconds)}
         except Exception as exc:
             return {"ok": False, "error": str(exc), "duration_seconds": 0, "duration_hms": "—"}
@@ -913,6 +931,16 @@ def create_app(
 
             oshash = hashes["oshash"]
             duration = hashes.get("duration")
+            if has_video and oshash:
+                try:
+                    from namer_helper.web import metadata_cache
+
+                    cached_meta = metadata_cache.get(video_path) or {}
+                    updated_meta = dict(cached_meta)
+                    updated_meta["oshash"] = oshash
+                    metadata_cache.set(video_path, updated_meta)
+                except Exception:
+                    pass
 
             # Rule check — user-confirmed decisions, highest priority
             if oshash:
@@ -1415,6 +1443,7 @@ def create_app(
             if oshash:
                 if not lookup_cache.is_transient_failure(result):
                     lookup_cache.set(oshash, result)
+                    result["cache_saved"] = True
             return result
         except Exception as exc:
             return {

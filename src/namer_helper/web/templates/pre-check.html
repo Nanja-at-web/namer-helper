@@ -105,6 +105,7 @@
       <option value="">Alle</option>
       <option value="open">Offen</option>
       <option value="processed">Bearbeitet</option>
+      <option value="cached">Cached</option>
     </select>
   </div>
   <!-- Zähler + Reset -->
@@ -150,7 +151,7 @@
     </thead>
     <tbody class="divide-y divide-gray-100" id="file-table">
       {% for f in files %}
-      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}">
+      <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}" data-cached="{{ 1 if f.lookup_cached else 0 }}">
         <td class="px-4 py-3">
           <input type="checkbox" class="file-cb rounded border-gray-300"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
@@ -163,6 +164,9 @@
           <span class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Bearbeitet</span>
           {% else %}
           <span class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-400">Offen</span>
+          {% endif %}
+          {% if f.lookup_cached %}
+          <span class="ml-1 inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">Cached</span>
           {% endif %}
         </td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
@@ -236,6 +240,28 @@ function rowDisplayName(rowIndex) {
   return document.getElementById('name-' + rowIndex)?.textContent || '';
 }
 
+function statusBadges(processed, cached) {
+  const primary = processed
+    ? '<span class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Bearbeitet</span>'
+    : '<span class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-400">Offen</span>';
+  const cache = cached
+    ? '<span class="ml-1 inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">Cached</span>'
+    : '';
+  return primary + cache;
+}
+
+function updateRowStatus(rowIndex, {processed=null, cached=null} = {}) {
+  const row = document.getElementById('row-' + rowIndex);
+  if (!row) return;
+  if (processed !== null) {
+    row.dataset.processed = processed ? '1' : '0';
+    row.classList.toggle('bg-green-50', !!processed);
+  }
+  if (cached !== null) row.dataset.cached = cached ? '1' : '0';
+  const pcell = document.getElementById('processed-' + rowIndex);
+  if (pcell) pcell.innerHTML = statusBadges(row.dataset.processed === '1', row.dataset.cached === '1');
+}
+
 function updateRowIdentity(rowIndex, newName, encodedName, durationSeconds, durationHms, processed=false) {
   const row = document.getElementById('row-' + rowIndex);
   const cell = document.getElementById('name-' + rowIndex);
@@ -247,13 +273,10 @@ function updateRowIdentity(rowIndex, newName, encodedName, durationSeconds, dura
     row.dataset.duration = durationSeconds ? String(durationSeconds) : '';
     row.dataset.durationLoaded = durationSeconds ? '1' : '0';
     if (processed) {
-      row.dataset.processed = '1';
-      row.classList.add('bg-green-50');
+      updateRowStatus(rowIndex, {processed: true});
     }
   }
   if (cb) cb.dataset.encoded = encodedName;
-  const pcell = document.getElementById('processed-' + rowIndex);
-  if (pcell && processed) pcell.innerHTML = '<span class="inline-flex items-center rounded bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Bearbeitet</span>';
   const dcell = document.getElementById('duration-' + rowIndex);
   if (dcell) dcell.textContent = durationSeconds ? durationHms : '…';
 }
@@ -360,6 +383,7 @@ function renderLookupResult(json, encodedName, rowIndex) {
   if (!panel) return;
   const content = panel.querySelector('.lookup-content');
   if (!content) return;
+  updateRowStatus(rowIndex, {cached: !!(json.cached || json.cache_saved)});
 
   let html = '';
 
@@ -821,6 +845,7 @@ async function invalidateCache(encodedName, rowIndex) {
   const res = await fetch('/pre-check/cache/invalidate?name=' + encodedName, {method: 'POST'});
   const json = await res.json();
   if (json.ok) {
+    updateRowStatus(rowIndex, {cached: false});
     const content = document.getElementById('lookup-' + rowIndex)?.querySelector('.lookup-content');
     if (content) content.innerHTML = '<span class="text-gray-400">Cache gelöscht — Suche läuft…</span>';
     await runLookup(encodedName, rowIndex);
@@ -960,7 +985,10 @@ function applyFilterSort() {
   function processedMatch(row) {
     if (!processedFilter) return true;
     const done = row.dataset.processed === '1';
-    return processedFilter === 'processed' ? done : !done;
+    const cached = row.dataset.cached === '1';
+    if (processedFilter === 'processed') return done;
+    if (processedFilter === 'cached') return cached;
+    return !done;
   }
 
   const rowMatches = row => (!q || row.dataset.name.includes(q)) && sizeMatch(row) && durationMatch(row) && processedMatch(row);
@@ -972,11 +1000,11 @@ function applyFilterSort() {
     filtered.sort((a, b) => {
       let va = sortCol === 'size' ? parseFloat(a.row.dataset.size)
         : sortCol === 'duration' ? parseFloat(a.row.dataset.duration || '0')
-        : sortCol === 'processed' ? parseInt(a.row.dataset.processed || '0', 10)
+        : sortCol === 'processed' ? (parseInt(a.row.dataset.processed || '0', 10) * 2) + parseInt(a.row.dataset.cached || '0', 10)
         : a.row.dataset.name;
       let vb = sortCol === 'size' ? parseFloat(b.row.dataset.size)
         : sortCol === 'duration' ? parseFloat(b.row.dataset.duration || '0')
-        : sortCol === 'processed' ? parseInt(b.row.dataset.processed || '0', 10)
+        : sortCol === 'processed' ? (parseInt(b.row.dataset.processed || '0', 10) * 2) + parseInt(b.row.dataset.cached || '0', 10)
         : b.row.dataset.name;
       if (sortCol === 'duration') {
         va = a.row.dataset.durationLoaded === '1' ? va : Number.POSITIVE_INFINITY;

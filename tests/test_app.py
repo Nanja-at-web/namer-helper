@@ -279,6 +279,38 @@ class TestPreCheckCache:
         assert r.json() == {"ok": True, "removed": True, "oshash": "e654a5305629c18b"}
         mocked.assert_called_once_with("e654a5305629c18b")
 
+    def test_pre_check_marks_cached_files_for_filtering(self, dirs):
+        pre_dir = dirs["config"].parent / "pre-check"
+        pre_dir.mkdir(exist_ok=True)
+        (pre_dir / "Cached.mp4").write_bytes(b"x" * 1024)
+        (dirs["config"] / "ai_config.json").write_text(json.dumps({
+            "pre_check_dir": str(pre_dir),
+            "ollama_url": "",
+            "ollama_model": "llama3",
+            "stashdb_api_key": "",
+            "theporndb_api_key": "",
+        }))
+
+        app = create_app(
+            namer_config=dirs["cfg"],
+            report_output_dir=dirs["reports"],
+            helper_config_dir=dirs["config"],
+        )
+
+        with patch("namer_helper.web.app._check_system_deps"):
+            with patch("namer_helper.web.app._is_moondream_available", return_value=False):
+                with patch("namer_helper.namer_bridge.hasher.compute_oshash",
+                           return_value="e654a5305629c18b"):
+                    with patch("namer_helper.web.lookup_cache.get",
+                               return_value={"ok": True, "cached": True}):
+                        with TestClient(app, raise_server_exceptions=False) as c:
+                            r = c.get("/pre-check")
+
+        assert r.status_code == 200
+        assert '<option value="cached">Cached</option>' in r.text
+        assert 'data-cached="1"' in r.text
+        assert ">Cached</span>" in r.text
+
 
 # ── settings save/load ────────────────────────────────────────────────────────
 
