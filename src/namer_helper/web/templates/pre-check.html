@@ -153,7 +153,7 @@
       {% for f in files %}
       <tr id="row-{{ loop.index }}" class="hover:bg-gray-50 {{ 'bg-green-50' if f.processed else '' }}" data-name="{{ f.name | lower }}" data-basename="{{ f.basename | lower }}" data-folder="{{ f.folder }}" data-size="{{ f.size_bytes }}" data-duration="{{ f.duration_seconds if f.duration_cached else '' }}" data-duration-loaded="{{ 1 if f.duration_cached else 0 }}" data-encoded="{{ f.name_encoded }}" data-processed="{{ 1 if f.processed else 0 }}" data-cached="{{ 1 if f.lookup_cached else 0 }}" data-filter-visible="1">
         <td class="px-4 py-3">
-          <input type="checkbox" class="file-cb rounded border-gray-300"
+          <input type="checkbox" class="file-cb rounded border-gray-300" onchange="syncSelectionState()"
             data-encoded="{{ f.name_encoded }}" data-row="{{ loop.index }}">
         </td>
         <td class="px-4 py-3 font-mono text-gray-700 break-all" id="name-{{ loop.index }}">
@@ -249,6 +249,25 @@ function toggleFolderSelection(folder, checked) {
     const cb = row.querySelector('.file-cb');
     if (cb) cb.checked = checked;
   });
+  syncSelectionState();
+}
+
+function syncSelectionState() {
+  const filteredRows = Array.from(document.querySelectorAll('#file-table tr[data-name]'))
+    .filter(row => row.dataset.filterVisible === '1');
+  const selectedRows = filteredRows.filter(row => row.querySelector('.file-cb')?.checked);
+  const selectAll = document.getElementById('select-all');
+  if (selectAll) {
+    selectAll.checked = filteredRows.length > 0 && selectedRows.length === filteredRows.length;
+    selectAll.indeterminate = selectedRows.length > 0 && selectedRows.length < filteredRows.length;
+  }
+  document.querySelectorAll('.folder-cb').forEach(cb => {
+    const folder = cb.dataset.folder || '';
+    const rows = folderRows(folder).filter(row => row.dataset.filterVisible === '1');
+    const selected = rows.filter(row => row.querySelector('.file-cb')?.checked);
+    cb.checked = rows.length > 0 && selected.length === rows.length;
+    cb.indeterminate = selected.length > 0 && selected.length < rows.length;
+  });
 }
 
 function initializeFolderState() {
@@ -264,6 +283,7 @@ function toggleAll(checked) {
     const row = document.getElementById('row-' + cb.dataset.row);
     if (row && row.dataset.filterVisible === '1') cb.checked = checked;
   });
+  syncSelectionState();
 }
 
 async function createDir() {
@@ -1096,7 +1116,8 @@ function applyFilterSort() {
     tr.className = 'bg-slate-50 hover:bg-slate-100 border-t border-slate-200';
     tr.innerHTML = `
       <td class="px-4 py-2">
-        <input type="checkbox" class="rounded border-gray-300"
+        <input type="checkbox" class="folder-cb rounded border-gray-300"
+          data-folder="${escHtml(folder)}"
           ${selected && selected === group.length ? 'checked' : ''}
           onchange="toggleFolderSelection('${escJs(folder)}', this.checked)">
       </td>
@@ -1191,6 +1212,7 @@ function applyFilterSort() {
     const folder = row.dataset.folder || '';
     if (!folder || !collapsedFolders.has(folder)) row.classList.remove('hidden');
   });
+  syncSelectionState();
 
   // Update sort icons
   ['name', 'size', 'duration', 'processed'].forEach(c => {
