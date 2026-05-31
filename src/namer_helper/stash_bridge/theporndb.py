@@ -213,6 +213,55 @@ def _score_movie(
     return _score_scene(proxy, title, performers, studio, date, duration)
 
 
+def _search_terms(
+    title: str,
+    performers: list[str] | None = None,
+    studio: str | None = None,
+    date: str | None = None,
+) -> list[str]:
+    performers = performers or []
+    terms: list[str] = []
+    base_title = title.strip()
+    clean_perfs = [p.strip() for p in performers[:3] if p.strip()]
+    if base_title:
+        terms.append(base_title)
+    if clean_perfs and base_title:
+        terms.append(f"{clean_perfs[0]} {base_title}")
+    if len(clean_perfs) >= 2:
+        terms.append(" ".join(clean_perfs[:2]))
+        if date and len(date) >= 4:
+            terms.append(f"{' '.join(clean_perfs[:2])} {date[:4]}")
+    if studio and base_title:
+        terms.append(f"{studio} {base_title}")
+    if date and len(date) >= 4 and base_title:
+        terms.append(f"{base_title} {date[:4]}")
+    return terms
+
+
+def _rank_scenes(
+    candidates: list[ThePornDBScene],
+    title: str,
+    performers: list[str],
+    studio: str | None,
+    date: str | None,
+    duration: int | None,
+    min_score: int,
+    *,
+    match_method: str,
+) -> ThePornDBResult:
+    for scene in candidates:
+        scene.score, scene.score_breakdown = _score_scene(scene, title, performers, studio, date, duration)
+
+    scored = [s for s in candidates if s.score >= min_score]
+    scored.sort(key=lambda s: s.score, reverse=True)
+
+    if not scored and candidates:
+        candidates.sort(key=lambda s: s.score, reverse=True)
+        return ThePornDBResult(scenes=candidates[:3], match_method=match_method)
+
+    return ThePornDBResult(scenes=scored[:3], match_method=match_method)
+
+
 class ThePornDBClient:
     def __init__(self, api_key: str = "", timeout: int = 15) -> None:
         self._headers = {"Content-Type": "application/json"}
@@ -300,7 +349,7 @@ class ThePornDBClient:
                 site=site_obj.get("name") if isinstance(site_obj, dict) else None,
                 network=network_obj.get("name") if isinstance(network_obj, dict) else None,
                 performers=performers,
-                url=s.get("url") or (f"https://api.theporndb.net/jav/{scene_id}" if scene_id else ""),
+                url=s.get("url") or (f"https://theporndb.net/scenes/{scene_id}" if scene_id else ""),
                 image=image or "",
                 match_method=method,
                 score=100 if method == "jav" else 0,
@@ -342,26 +391,87 @@ class ThePornDBClient:
         Builds an enriched search term from title + performers, then scores
         all candidates. Only scenes above min_score are returned, sorted best-first.
         """
+        result = self.search_scenes_by_context_rest(
+            title,
+            performers=performers,
+            studio=studio,
+            date=date,
+            duration=duration,
+            min_score=min_score,
+        )
+        if result.found or (
+            result.error
+            and any(term in result.error for term in ("Token", "Zugriff verweigert", "ungültig"))
+        ):
+            return result
+        return self.search_scenes_by_context_graphql(
+            title,
+            performers=performers,
+            studio=studio,
+            date=date,
+            duration=duration,
+            min_score=min_score,
+        )
+
+    def search_scenes_by_context_rest(
+        self,
+        title: str,
+        performers: list[str] | None = None,
+        studio: str | None = None,
+        date: str | None = None,
+        duration: int | None = None,
+        min_score: int = 20,
+    ) -> ThePornDBResult:
+        """REST /scenes context search."""
         if not title.strip():
             return ThePornDBResult(error="Kein Suchtitel verfügbar")
 
         performers = performers or []
-
-        terms: list[str] = []
-        base_title = title.strip()
-        clean_perfs = [p.strip() for p in performers[:3] if p.strip()]
-        if base_title:
-            terms.append(base_title)
-        if clean_perfs and base_title:
-            terms.append(f"{clean_perfs[0]} {base_title}")
-        if len(clean_perfs) >= 2:
-            terms.append(" ".join(clean_perfs[:2]))
+        terms = _search_terms(title, performers, studio, date)
+        seen_terms: set[str] = set()
+        seen_ids: set[str] = set()
+        candidates: list[ThePornDBScene] = []
+        last_error: str | None = None
+        for term in terms:
+            key = term.lower().strip()
+            if not key or key in seen_terms:
+                continue
+            seen_terms.add(key)
+            params = {"q": term, "per_page": 10}
             if date and len(date) >= 4:
-                terms.append(f"{' '.join(clean_perfs[:2])} {date[:4]}")
-        if studio and base_title:
-            terms.append(f"{studio} {base_title}")
-        if date and len(date) >= 4 and base_title:
-            terms.append(f"{base_title} {date[:4]}")
+                params["year"] = date[:4]
+            if duration:
+                params["duration"] = duration
+            body, err = self._get_rest("/scenes", params)
+            if err:
+                last_error = err
+                continue
+            raw = (body or {}).get("data") or []
+            for scene in self._parse_rest_scenes(raw, "scene"):
+                if scene.id and scene.id not in seen_ids:
+                    seen_ids.add(scene.id)
+                    candidates.append(scene)
+
+        if not candidates:
+            return ThePornDBResult(error=last_error or "Keine REST-Scene-Treffer", match_method="scene")
+
+        return _rank_scenes(candidates, title, performers, studio, date, duration, min_score, match_method="scene")
+
+    def search_scenes_by_context_graphql(
+        self,
+        title: str,
+        performers: list[str] | None = None,
+        studio: str | None = None,
+        date: str | None = None,
+        duration: int | None = None,
+        min_score: int = 20,
+    ) -> ThePornDBResult:
+        """GraphQL scene context search fallback."""
+        if not title.strip():
+            return ThePornDBResult(error="Kein Suchtitel verfügbar")
+
+        performers = performers or []
+        terms = _search_terms(title, performers, studio, date)
 
         seen_terms: set[str] = set()
         seen_ids: set[str] = set()
@@ -385,19 +495,7 @@ class ThePornDBClient:
         if not candidates and last_error:
             return ThePornDBResult(error=last_error, match_method="title")
 
-        # Score and filter
-        for scene in candidates:
-            scene.score, scene.score_breakdown = _score_scene(scene, title, performers, studio, date, duration)
-
-        scored = [s for s in candidates if s.score >= min_score]
-        scored.sort(key=lambda s: s.score, reverse=True)
-
-        # If nothing passes threshold, return top-3 unfiltered so user can decide
-        if not scored and candidates:
-            candidates.sort(key=lambda s: s.score, reverse=True)
-            return ThePornDBResult(scenes=candidates[:3], match_method="title")
-
-        return ThePornDBResult(scenes=scored[:3], match_method="title")
+        return _rank_scenes(candidates, title, performers, studio, date, duration, min_score, match_method="title")
 
     def search_by_performer(
         self,
