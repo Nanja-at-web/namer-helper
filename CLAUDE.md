@@ -88,7 +88,6 @@ namer-helper/
 **Bestätigte FEHLENDE/OPTIONALE Dateien:**
 
 ```
-modelfiles/                 # Phase 4 / C1 Ollama-Modelfile – noch nicht erstellt
 docker/docker-compose.yml   # docker-compose.yml ist im ROOT, nicht in docker/
 ```
 
@@ -1211,6 +1210,7 @@ Schritt D – Phase 4 / C1 Infrastruktur:
   training/train.sh
   modelfiles/scene-parser.Modelfile
   → echtes Fine-Tuning extern auf RunPod/Unsloth/CUDA
+  ✓ Infrastruktur implementiert in stable/precheck
 ```
 
 -----
@@ -1438,13 +1438,14 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 | UI | Pre-Check Dauer, Status, Cached-Filter, Scan Pause/Weiter/Stop | ✓ |
 | TPDB | REST `/scenes`, REST `/movies`, REST `/jav`, Fingerprint-Fallbacks | ✓ |
 | C2 | `training/generator.py`: JSONL aus bestätigten Rules | ✓ |
+| C1 | `training/README.md`, `training/train.sh`, `modelfiles/scene-parser.Modelfile` | ✓ |
 | T | Tests: filename_parser, hasher, StashDB, TPDB, Rules, Identification | ✓ |
 
 ### Noch ausstehend
 
 | Schritt | Modul | Priorität |
 |---------|-------|-----------|
-| C1 | Fine-Tuning-Infrastruktur; echtes Training extern | Niedrig |
+| C1-Training | echtes Fine-Tuning extern auf RunPod/Unsloth/CUDA | Niedrig |
 
 ### Wichtige Architekturentscheidungen
 
