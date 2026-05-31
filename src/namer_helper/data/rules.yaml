@@ -1,0 +1,18 @@
+# namer-helper Rule Learning
+# Version: 1
+#
+# This file is populated automatically when a user confirms a rename in the
+# pre-check UI. Rules are matched by oshash (OpenSubtitles Hash) before any
+# TPDB/StashDB API calls, saving bandwidth and reducing latency.
+#
+# Format:
+#   - type: hash
+#     oshash: <16-char hex>
+#     suggested_name: <confirmed filename with extension>
+#     confidence: 1.0
+#     source: user_confirmed
+#     tpdb_id: <optional TPDB scene ID>
+#     created: <YYYY-MM-DD>
+
+version: 1
+rules: []

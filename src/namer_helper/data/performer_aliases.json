@@ -1,0 +1,8 @@
+{
+  "_meta": {
+    "version": 1,
+    "source": "manual+auto",
+    "note": "Performer abbreviations. Keys are stored uppercase. New entries added automatically after confirmed TPDB matches via learn()."
+  },
+  "performers": {}
+}

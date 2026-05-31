@@ -880,6 +880,29 @@ def create_app(
             oshash = hashes["oshash"]
             duration = hashes.get("duration")
 
+            # Rule check — user-confirmed decisions, highest priority
+            if oshash:
+                try:
+                    from namer_helper.rules import load_rules, match_by_hash, rule_to_identification
+                    _rules = load_rules(helper_config_dir / "rules.yaml")
+                    _rule = match_by_hash(oshash, _rules)
+                    if _rule is not None:
+                        return {
+                            "ok": True,
+                            "hashes": hashes,
+                            "filename_parsed": None,
+                            "identification": rule_to_identification(_rule, name),
+                            "stashdb_scenes": [], "stashdb_error": None,
+                            "stashdb_suggested": None,
+                            "tpdb_scenes": [], "tpdb_error": None, "tpdb_suggested": None,
+                            "tpdb_movies": [], "tpdb_movie_error": None,
+                            "tpdb_movie_suggested": None,
+                            "ollama": None, "jav_code": None,
+                            "tpdb_crosscheck": "skipped",
+                        }
+                except Exception:
+                    pass  # rule check failure must never block the pipeline
+
             # Cache check (needs oshash)
             if oshash:
                 cached = lookup_cache.get(oshash)
@@ -1465,7 +1488,7 @@ def create_app(
             return {"ok": False, "error": str(exc)}
 
     @app.post("/pre-check/rename")
-    async def pre_check_rename(name: str, new_name: str):
+    async def pre_check_rename(name: str, new_name: str, oshash: str = "", tpdb_id: str = ""):
         try:
             pre_dir = _get_pre_check_dir()
             src = _safe_path(pre_dir, name)
@@ -1496,11 +1519,28 @@ def create_app(
                 metadata_cache.set(dst, cached_meta)
                 metadata_cache.invalidate(src)
             duration_seconds = int(cached_meta.get("duration_seconds") or 0)
+
+            # Rule learning: persist the confirmed oshash → new_name mapping
+            rule_learned = False
+            if oshash:
+                try:
+                    from namer_helper.rules import learn_rule
+                    rule_learned = learn_rule(
+                        helper_config_dir / "rules.yaml",
+                        oshash=oshash,
+                        suggested_name=dst.name,
+                        tpdb_id=tpdb_id or None,
+                        source="user_confirmed",
+                    )
+                except Exception:
+                    pass
+
             return {
                 "ok": True,
                 "new_name": dst.name,
                 "name_encoded": quote(dst.name),
                 "duration_seconds": duration_seconds,
+                "rule_learned": rule_learned,
                 "duration_hms": _format_duration(duration_seconds),
                 "duration_cached": bool(duration_seconds),
                 "processed": True,

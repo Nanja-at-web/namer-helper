@@ -23,9 +23,9 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Built-in path: ships inside the package wheel.
-# Use this as the initial / fallback source in tests and CLI tools.
+# Built-in paths: ship inside the package wheel.
 PACKAGE_ALIASES_PATH: Path = Path(__file__).parent / "data" / "aliases.json"
+PACKAGE_PERFORMER_ALIASES_PATH: Path = Path(__file__).parent / "data" / "performer_aliases.json"
 
 
 # Built-in fallback — used when aliases.json is missing or unreadable.
@@ -55,6 +55,14 @@ _DEFAULT_STUDIOS: dict[str, str] = {
 class Aliases:
     studios: dict[str, str] = field(default_factory=dict)
     performers: dict[str, str] = field(default_factory=dict)
+
+
+def merge(base: Aliases, extra: Aliases) -> Aliases:
+    """Return a new Aliases combining both, with extra taking priority on conflicts."""
+    return Aliases(
+        studios={**base.studios, **extra.studios},
+        performers={**base.performers, **extra.performers},
+    )
 
 
 def load(path: Path | None = None) -> Aliases:
