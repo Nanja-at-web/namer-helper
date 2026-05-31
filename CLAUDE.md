@@ -1183,6 +1183,7 @@ Schritt B – Phase 4 / B4 optionaler Embedding-Fallback:
   → Ollama nomic-embed-text nutzen, wenn vorhanden
   → kein Hard-Fail ohne chromadb oder Ollama-Modell
   → nur als letzter Suchweg nach Hash/JAV/Movie/Kontext
+  ✓ implementiert in stable/precheck
 
 Schritt C – Phase 4 / C2 Trainingsdaten-Generator:
   src/namer_helper/training/generator.py
@@ -1425,7 +1426,7 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 | Schritt | Modul | Priorität |
 |---------|-------|-----------|
 | Deploy | `stable/precheck` auf Proxmox/LXC live verifizieren | Hoch |
-| B4 | Optionaler Embedding-Fallback mit ChromaDB + Ollama `nomic-embed-text` | Mittel |
+| Deploy | Phase 4 / B4 live verifizieren, sobald `chromadb` + `nomic-embed-text` installiert sind | Mittel |
 | C2 | Trainingsdaten-Generator aus bestätigten Entscheidungen | Mittel |
 | C1 | Fine-Tuning-Infrastruktur; echtes Training extern | Niedrig |
 

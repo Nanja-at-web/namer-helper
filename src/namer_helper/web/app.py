@@ -1200,6 +1200,55 @@ def create_app(
                             if tpdb_result and tpdb_result.found:
                                 break
 
+                # Step 5: Optional semantic fallback over a local ChromaDB index.
+                # This is disabled automatically when chromadb or nomic-embed-text is absent.
+                if (not tpdb_result or not tpdb_result.found) and ai_cfg.ollama_url:
+                    try:
+                        from namer_helper.embedding import search_scene_index
+
+                        semantic_terms = [parsed.cleaned or ""]
+                        if ollama_result:
+                            semantic_terms.extend((ollama_result.get("search_queries") or [])[:2])
+                        if ocr_text:
+                            semantic_terms.extend([line for line in ocr_text.splitlines()[:2] if line.strip()])
+                        for term in semantic_terms:
+                            if not term.strip():
+                                continue
+                            emb_result = search_scene_index(
+                                term,
+                                ollama_url=ai_cfg.ollama_url,
+                                persist_dir=helper_config_dir / "embeddings",
+                            )
+                            if emb_result.found:
+                                tpdb_result = ThePornDBResult(
+                                    scenes=[
+                                        ThePornDBScene(
+                                            id=hit.id,
+                                            title=hit.title,
+                                            date=hit.metadata.get("date"),
+                                            site=hit.metadata.get("site"),
+                                            network=hit.metadata.get("network"),
+                                            performers=[
+                                                p.strip()
+                                                for p in str(hit.metadata.get("performers") or "").split(",")
+                                                if p.strip()
+                                            ],
+                                            url=hit.metadata.get("url") or "",
+                                            image=hit.metadata.get("image") or "",
+                                            match_method="embedding",
+                                            score=int(round(hit.score * 100)),
+                                            score_breakdown={"Embedding": int(round(hit.score * 100))},
+                                            duration=int(hit.metadata["duration"]) if hit.metadata.get("duration") else None,
+                                            sku=hit.metadata.get("sku"),
+                                        )
+                                        for hit in emb_result.hits
+                                    ],
+                                    match_method="embedding",
+                                )
+                                break
+                    except Exception:
+                        pass
+
                 if tpdb_result:
                     tpdb_error = tpdb_result.error
                     tpdb_match_method = tpdb_result.match_method
