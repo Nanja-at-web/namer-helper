@@ -53,11 +53,11 @@
       </div>
       <div class="flex gap-1 shrink-0">
         <button onclick="act('confirm','{{ item.name|urlencode }}')"
-          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded" title="Bestätigen → watch/">✓</button>
+          class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded">→ watch</button>
         <button onclick="act('reject','{{ item.name|urlencode }}')"
-          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded" title="Aussortieren">✕</button>
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">📦 Aussortieren</button>
         <button onclick="act('defer','{{ item.name|urlencode }}')"
-          class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded" title="Zurückstellen">⏸</button>
+          class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded">⏸ Zurückstellen</button>
       </div>
     </div>
   </div>
@@ -82,9 +82,9 @@
       </div>
       <div class="flex gap-1 shrink-0">
         <button onclick="act('confirm','{{ item.name|urlencode }}')"
-          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded">✓</button>
+          class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded">→ watch</button>
         <button onclick="act('reject','{{ item.name|urlencode }}')"
-          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">✕</button>
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">📦 Aussortieren</button>
       </div>
     </div>
     {% endfor %}
@@ -106,9 +106,9 @@
       <span class="font-mono text-sm text-gray-700">{{ item.name }}</span>
       <div class="flex gap-1 shrink-0">
         <button onclick="act('confirm','{{ item.name|urlencode }}')"
-          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded">✓</button>
+          class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs px-3 py-1 rounded">→ watch</button>
         <button onclick="act('reject','{{ item.name|urlencode }}')"
-          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">✕</button>
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">📦 Aussortieren</button>
       </div>
     </div>
     {% endfor %}

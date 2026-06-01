@@ -720,27 +720,13 @@ def create_app(
 
     @app.post("/failed/move")
     async def failed_move(name: str):
-        """Aussortieren: fehlgeschlagene Datei nach aussortiert/ verschieben.
-
-        Es wird NIE gelöscht. Video + zugehöriges _namer.json.gz-Sidecar
-        wandern gemeinsam in <failed>/../aussortiert/.
-        """
+        """Aussortieren: failed/ → aussortiert/ (Video + Sidecar). Verb: set_aside."""
         try:
-            paths = read_namer_paths(namer_config)
-            failed_dir = paths["failed_dir"]
-            sorted_out_dir = _aussortiert_dir_for(failed_dir.parent)
-            stem = Path(name).stem
-            video = _safe_path(failed_dir, name)
-            if not video or not video.exists():
-                return {"ok": False, "error": "Datei nicht gefunden"}
-            ok, error = _move_to_directory(video, sorted_out_dir)
+            failed_dir = read_namer_paths(namer_config)["failed_dir"]
+            ok, result = _act_set_aside(name, source_dir=failed_dir, move_sidecar=True)
             if not ok:
-                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
-            # Sidecar mitnehmen, damit failed/ sauber bleibt (best-effort)
-            sidecar = _safe_path(failed_dir, f"{stem}_namer.json.gz")
-            if sidecar and sidecar.exists():
-                _move_to_directory(sidecar, sorted_out_dir)
-            return {"ok": True, "moved_to": str(sorted_out_dir / video.name)}
+                return {"ok": False, "error": result}
+            return {"ok": True, "moved_to": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1975,17 +1961,11 @@ def create_app(
 
     @app.post("/pre-check/send")
     async def pre_check_send(name: str):
+        # → watch/ (Namer verarbeitet). Verb: confirm — lernt zusätzlich eine
+        # Rule, falls die Datei in der Queue einen Zielnamen hat.
         try:
-            pre_dir = _get_pre_check_dir()
-            paths = read_namer_paths(namer_config)
-            watch_dir = paths["watch_dir"]
-            src = _safe_path(pre_dir, name)
-            if not src or not src.exists():
-                return {"ok": False, "error": "Datei nicht gefunden"}
-            ok, error = _move_to_directory(src, watch_dir)
-            if not ok:
-                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
-            return {"ok": True}
+            ok, error = _act_confirm(name)
+            return {"ok": ok, "error": error}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1993,8 +1973,6 @@ def create_app(
     async def pre_check_send_all():
         try:
             pre_dir = _get_pre_check_dir()
-            paths = read_namer_paths(namer_config)
-            watch_dir = paths["watch_dir"]
             count, skipped = 0, 0
             for video in pre_dir.rglob("*"):
                 if not video.is_file():
@@ -2003,13 +1981,11 @@ def create_app(
                     continue
                 if _is_ignored_file(video):
                     continue
-                try:
-                    ok, _ = _move_to_directory(video, watch_dir)
-                    if ok:
-                        count += 1
-                    else:
-                        skipped += 1
-                except OSError:
+                rel = str(video.relative_to(pre_dir))
+                ok, _ = _act_confirm(rel)
+                if ok:
+                    count += 1
+                else:
                     skipped += 1
             return {"ok": True, "count": count, "skipped": skipped}
         except Exception as e:
@@ -2017,21 +1993,12 @@ def create_app(
 
     @app.post("/pre-check/move")
     async def pre_check_move(name: str):
-        """Aussortieren: Datei aus pre-check/ in den Aussortier-Ordner verschieben.
-
-        Es wird NIE gelöscht — die Datei wird nach <pre-check>/../aussortiert/
-        verschoben, damit nichts unwiederbringlich verloren geht.
-        """
+        """Aussortieren: pre-check/ → aussortiert/ (nie löschen). Verb: set_aside."""
         try:
-            pre_dir = _get_pre_check_dir()
-            src = _safe_path(pre_dir, name)
-            if not src or not src.exists():
-                return {"ok": False, "error": "Datei nicht gefunden"}
-            sorted_out_dir = _aussortiert_dir_for(pre_dir.parent)
-            ok, error = _move_to_directory(src, sorted_out_dir)
+            ok, result = _act_set_aside(name, source_dir=_get_pre_check_dir())
             if not ok:
-                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
-            return {"ok": True, "moved_to": str(sorted_out_dir / src.name)}
+                return {"ok": False, "error": result}
+            return {"ok": True, "moved_to": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -2040,20 +2007,37 @@ def create_app(
     def _queue_path() -> Path:
         return helper_config_dir / "review-queue.json"
 
-    def _confirm_queue_item(item) -> tuple[bool, str | None]:
-        """Send one queued file to watch/ for Namer, learn a rule, mark confirmed.
+    # ── Unified file-action verbs ─────────────────────────────────────────────
+    # One source of truth for the three decisions a file can receive. Every
+    # Pre-Check and Queue route calls these — no duplicated move logic, identical
+    # side-effects everywhere. set_status() is a no-op when the file is not in
+    # the queue, so the same verbs work for plain Pre-Check files too.
 
-        Returns (ok, error). Confirmation = move to watch_dir so Namer Core
-        performs the actual rename (Leitprinzip: Core bleibt ausführende Instanz).
+    def _act_confirm(
+        name: str,
+        *,
+        suggested_name: str | None = None,
+        oshash: str | None = None,
+        tpdb_id: str | None = None,
+    ) -> tuple[bool, str | None]:
+        """Bestätigen: pre-check/ → watch/ (Namer benennt um), Rule lernen, Status.
+
+        Lernt eine Rule nur wenn ein Zielname bekannt ist (aus der Queue oder
+        übergeben). Ohne Zielname = reines Verschieben nach watch/.
         """
         from namer_helper import queue as review_queue
         pre_dir = _get_pre_check_dir()
-        src = _safe_path(pre_dir, item.name)
+        src = _safe_path(pre_dir, name)
         if not src or not src.exists():
-            review_queue.set_status(_queue_path(), item.name, review_queue.REJECTED)
+            review_queue.set_status(_queue_path(), name, review_queue.REJECTED)
             return False, "Datei nicht gefunden"
 
-        oshash = item.oshash
+        item = review_queue.get_item(_queue_path(), name)
+        if item is not None:
+            suggested_name = suggested_name or item.suggested_name
+            oshash = oshash or item.oshash
+            tpdb_id = tpdb_id or item.tpdb_id
+
         if not oshash:
             try:
                 from namer_helper.namer_bridge.hasher import compute_oshash
@@ -2061,26 +2045,48 @@ def create_app(
             except Exception:
                 oshash = ""
 
-        # Learn the confirmed decision so this file never hits the API again.
-        if oshash and item.suggested_name:
+        if oshash and suggested_name:
             try:
                 from namer_helper.rules import learn_rule
                 learn_rule(
                     helper_config_dir / "rules.yaml",
                     oshash=oshash,
-                    suggested_name=item.suggested_name,
-                    tpdb_id=item.tpdb_id or None,
+                    suggested_name=suggested_name,
+                    tpdb_id=tpdb_id or None,
                     source="user_confirmed",
                 )
             except Exception:
                 pass
 
-        paths = read_namer_paths(namer_config)
-        ok, error = _move_to_directory(src, paths["watch_dir"])
+        ok, error = _move_to_directory(src, read_namer_paths(namer_config)["watch_dir"])
         if not ok:
             return False, error or "Datei konnte nicht verschoben werden"
-        review_queue.set_status(_queue_path(), item.name, review_queue.CONFIRMED)
+        review_queue.set_status(_queue_path(), name, review_queue.CONFIRMED)
         return True, None
+
+    def _act_set_aside(
+        name: str, *, source_dir: Path, move_sidecar: bool = False
+    ) -> tuple[bool, str | None]:
+        """Aussortieren: source_dir → aussortiert/ (nie löschen), Status setzen."""
+        from namer_helper import queue as review_queue
+        src = _safe_path(source_dir, name)
+        if not src or not src.exists():
+            return False, "Datei nicht gefunden"
+        target = _aussortiert_dir_for(source_dir.parent)
+        ok, error = _move_to_directory(src, target)
+        if not ok:
+            return False, error or "Datei konnte nicht verschoben werden"
+        if move_sidecar:
+            sidecar = _safe_path(source_dir, f"{Path(name).stem}_namer.json.gz")
+            if sidecar and sidecar.exists():
+                _move_to_directory(sidecar, target)
+        review_queue.set_status(_queue_path(), name, review_queue.REJECTED)
+        return True, str(target / src.name)
+
+    def _act_defer(name: str) -> bool:
+        """Zurückstellen: Datei bleibt, nur Queue-Status ändern."""
+        from namer_helper import queue as review_queue
+        return review_queue.set_status(_queue_path(), name, review_queue.DEFERRED)
 
     @app.get("/queue", response_class=HTMLResponse)
     async def queue_page(request: Request):
@@ -2109,11 +2115,7 @@ def create_app(
 
     @app.post("/pre-check/queue/confirm")
     async def pre_check_queue_confirm(name: str):
-        from namer_helper import queue as review_queue
-        item = review_queue.get_item(_queue_path(), name)
-        if item is None:
-            return {"ok": False, "error": "Nicht in der Queue"}
-        ok, error = _confirm_queue_item(item)
+        ok, error = _act_confirm(name)
         return {"ok": ok, "error": error}
 
     @app.post("/pre-check/queue/confirm-batch")
@@ -2124,7 +2126,7 @@ def create_app(
         eligible = review_queue.batch_eligible(items)
         confirmed, failed = 0, []
         for item in eligible:
-            ok, error = _confirm_queue_item(item)
+            ok, error = _act_confirm(item.name)
             if ok:
                 confirmed += 1
             else:
@@ -2134,15 +2136,14 @@ def create_app(
 
     @app.post("/pre-check/queue/reject")
     async def pre_check_queue_reject(name: str):
-        from namer_helper import queue as review_queue
-        ok = review_queue.set_status(_queue_path(), name, review_queue.REJECTED)
-        return {"ok": ok}
+        # "Aussortieren" — verschiebt die Datei jetzt wirklich nach aussortiert/
+        # (vorher nur Status). Selbe Logik wie /pre-check/move.
+        ok, error = _act_set_aside(name, source_dir=_get_pre_check_dir())
+        return {"ok": ok, "error": error}
 
     @app.post("/pre-check/queue/defer")
     async def pre_check_queue_defer(name: str):
-        from namer_helper import queue as review_queue
-        ok = review_queue.set_status(_queue_path(), name, review_queue.DEFERRED)
-        return {"ok": ok}
+        return {"ok": _act_defer(name)}
 
     @app.post("/pre-check/queue/clear-resolved")
     async def pre_check_queue_clear_resolved():

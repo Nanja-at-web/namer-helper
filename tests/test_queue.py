@@ -288,11 +288,17 @@ class TestQueueRoutes:
         assert ctx.exists()                            # context stayed
         assert (dirs["watch"] / "ctx.mp4").exists() is False
 
-    def test_reject_marks_status(self, client, dirs):
+    def test_reject_moves_file_and_marks_status(self, client, dirs):
+        # Unified verb: reject now MOVES the file to aussortiert/ (bug fix)
+        # AND marks the queue item rejected — consistent with /pre-check/move.
         qpath = dirs["config"] / "review-queue.json"
+        video = dirs["pre"] / "f.mp4"; video.write_bytes(b"\x00" * 1000)
         q.enqueue(qpath, name="f.mp4", identification=_ident())
         r = client.post("/pre-check/queue/reject", params={"name": "f.mp4"})
         assert r.json()["ok"] is True
+        # File physically moved out of pre-check, into aussortiert/
+        assert not video.exists()
+        assert (dirs["pre"].parent / "aussortiert" / "f.mp4").exists()
         assert q.get_item(qpath, "f.mp4").status == q.REJECTED
 
     def test_defer_marks_status(self, client, dirs):
@@ -315,6 +321,41 @@ class TestQueueRoutes:
         q.set_status(qpath, "f.mp4", q.CONFIRMED)
         r = client.post("/pre-check/queue/clear-resolved")
         assert r.json()["removed"] == 1
+
+
+class TestUnifiedVerbs:
+    """Pre-Check and Queue routes share one verb layer — same side-effects."""
+
+    def test_send_learns_rule_when_queued(self, client, dirs):
+        # /pre-check/send now uses the confirm verb: if the file is in the queue
+        # with a suggested name, sending it also learns a rule.
+        qpath = dirs["config"] / "review-queue.json"
+        video = dirs["pre"] / "m.mp4"; video.write_bytes(b"\x00" * 1000)
+        q.enqueue(qpath, name="m.mp4", identification=_ident(suggested="Clean.mp4"),
+                  oshash=VALID_OSHASH)
+        r = client.post("/pre-check/send", params={"name": "m.mp4"})
+        assert r.json()["ok"] is True
+        assert (dirs["watch"] / "m.mp4").exists()
+        from namer_helper.rules import load_rules, match_by_hash
+        assert match_by_hash(VALID_OSHASH, load_rules(dirs["config"] / "rules.yaml")) is not None
+
+    def test_send_plain_file_not_in_queue_still_moves(self, client, dirs):
+        # confirm verb works for a plain pre-check file with no queue entry
+        video = dirs["pre"] / "plain.mp4"; video.write_bytes(b"\x00" * 1000)
+        r = client.post("/pre-check/send", params={"name": "plain.mp4"})
+        assert r.json()["ok"] is True
+        assert (dirs["watch"] / "plain.mp4").exists()
+
+    def test_precheck_move_and_queue_reject_same_effect(self, client, dirs):
+        # Both verbs land the file in aussortiert/ — identical outcome
+        for route, fname in (("/pre-check/move", "a.mp4"), ("/pre-check/queue/reject", "b.mp4")):
+            v = dirs["pre"] / fname; v.write_bytes(b"\x00" * 1000)
+            if route.endswith("reject"):
+                q.enqueue(dirs["config"] / "review-queue.json",
+                          name=fname, identification=_ident())
+            r = client.post(route, params={"name": fname})
+            assert r.json()["ok"] is True
+            assert (dirs["pre"].parent / "aussortiert" / fname).exists()
 
 
 class TestPreCheckMove:
