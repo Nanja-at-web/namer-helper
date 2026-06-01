@@ -111,6 +111,22 @@
   </div>
 </div>
 
+<div class="bg-white rounded-lg shadow p-5 mb-6">
+  <h2 class="font-semibold text-gray-800 mb-1">📦 Aussortiert-Ordner</h2>
+  <p class="text-xs text-gray-500 mb-3">
+    Aussortierte Dateien werden hierhin verschoben (nie gelöscht). <b>Leer lassen</b>
+    = neben pre-check/failed auf der lokalen Disk. Auf eine <b>NAS</b> zeigen lassen
+    (z.B. <span class="font-mono">/mnt/nas/aussortiert</span>), damit die kleine
+    Container-Disk nicht vollläuft.
+  </p>
+  <div class="max-w-lg">
+    <label class="block text-xs font-medium text-gray-500 mb-1">Aussortier-Pfad (optional)</label>
+    <input id="s-aussortiert-dir" type="text" value="{{ ai_cfg.aussortiert_dir }}"
+      placeholder="/mnt/nas/aussortiert  (leer = lokal)"
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+  </div>
+</div>
+
 <div id="msg" class="hidden mb-4 text-sm rounded p-3"></div>
 
 <button onclick="saveSettings()"
@@ -126,6 +142,7 @@ async function saveSettings() {
     ollama_model:    document.getElementById('s-ollama-model').value.trim(),
     theporndb_api_key: document.getElementById('s-tpdb-key').value,
     pre_check_dir:   document.getElementById('s-pre-check-dir').value.trim(),
+    aussortiert_dir: document.getElementById('s-aussortiert-dir').value.trim(),
   };
   const res = await fetch('/settings', {
     method: 'POST',

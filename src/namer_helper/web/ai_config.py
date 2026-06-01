@@ -22,6 +22,10 @@ class AIConfig:
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
     pre_check_dir: str = "/var/lib/namer/pre-check"
+    # Optional: where aussortierte Dateien landen. Leer = neben pre-check/failed
+    # (kleine LXC-Disk). Auf eine NAS zeigen lassen, damit der Container nicht
+    # vollläuft, z.B. /mnt/nas/aussortiert.
+    aussortiert_dir: str = ""
 
 
 def load_ai_config(config_dir: Path) -> AIConfig:
@@ -34,6 +38,7 @@ def load_ai_config(config_dir: Path) -> AIConfig:
             ollama_url=data.get("ollama_url", "http://localhost:11434"),
             ollama_model=data.get("ollama_model", "llama3"),
             pre_check_dir=data.get("pre_check_dir", "/var/lib/namer/pre-check"),
+            aussortiert_dir=data.get("aussortiert_dir", ""),
         )
     except Exception:
         return AIConfig()

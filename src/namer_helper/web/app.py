@@ -552,6 +552,11 @@ def create_app(
 
     def _sorted_out_dirs() -> list[Path]:
         dirs: list[Path] = []
+        # Configured target first (e.g. NAS), then the default locations so
+        # files moved there before configuration stay visible/restorable.
+        custom = (load_ai_config(helper_config_dir).aussortiert_dir or "").strip()
+        if custom:
+            dirs.append(Path(custom))
         try:
             dirs.append(_get_pre_check_dir().parent / "aussortiert")
         except Exception:
@@ -723,7 +728,7 @@ def create_app(
         try:
             paths = read_namer_paths(namer_config)
             failed_dir = paths["failed_dir"]
-            sorted_out_dir = failed_dir.parent / "aussortiert"
+            sorted_out_dir = _aussortiert_dir_for(failed_dir.parent)
             stem = Path(name).stem
             video = _safe_path(failed_dir, name)
             if not video or not video.exists():
@@ -938,6 +943,16 @@ def create_app(
 
     def _get_pre_check_dir() -> Path:
         return Path(load_ai_config(helper_config_dir).pre_check_dir)
+
+    def _aussortiert_dir_for(default_parent: Path) -> Path:
+        """Wohin aussortiert wird: konfigurierter Pfad (z.B. NAS) oder Default.
+
+        Leer in den Settings → <default_parent>/aussortiert (lokal, klein).
+        Gesetzt → der konfigurierte Pfad (z.B. /mnt/nas/aussortiert), damit
+        die kleine Container-Disk nicht vollläuft.
+        """
+        custom = (load_ai_config(helper_config_dir).aussortiert_dir or "").strip()
+        return Path(custom) if custom else default_parent / "aussortiert"
 
     def _find_dest_duplicate(oshash: str, file_size: int) -> str | None:
         """Check dest/ for a file with the same oshash. Fast: pre-filters by size."""
@@ -2012,7 +2027,7 @@ def create_app(
             src = _safe_path(pre_dir, name)
             if not src or not src.exists():
                 return {"ok": False, "error": "Datei nicht gefunden"}
-            sorted_out_dir = pre_dir.parent / "aussortiert"
+            sorted_out_dir = _aussortiert_dir_for(pre_dir.parent)
             ok, error = _move_to_directory(src, sorted_out_dir)
             if not ok:
                 return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
@@ -2241,6 +2256,7 @@ def create_app(
                 ollama_url=body.get("ollama_url", "").strip() or "http://localhost:11434",
                 ollama_model=body.get("ollama_model", "").strip() or "llama3",
                 pre_check_dir=body.get("pre_check_dir", "").strip() or "/var/lib/namer/pre-check",
+                aussortiert_dir=body.get("aussortiert_dir", "").strip(),
             )
             save_ai_config(helper_config_dir, cfg)
             return {"ok": True}

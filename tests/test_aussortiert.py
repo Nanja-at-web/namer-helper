@@ -86,3 +86,44 @@ class TestRestore:
     def test_restore_rejects_traversal(self, client):
         r = client.post("/aussortiert/restore", params={"name": "../../etc/passwd"})
         assert r.json()["ok"] is False
+
+
+class TestConfigurableAussortiertDir:
+    """aussortiert_dir setting redirects moves to a custom path (e.g. NAS)."""
+
+    def _set_dir(self, config_dir, value):
+        import json as _json
+        cfg = _json.loads((config_dir / "ai_config.json").read_text())
+        cfg["aussortiert_dir"] = value
+        (config_dir / "ai_config.json").write_text(_json.dumps(cfg))
+
+    def test_precheck_move_uses_configured_dir(self, client, dirs, tmp_path):
+        nas = tmp_path / "nas" / "aussortiert"
+        self._set_dir(dirs["config"], str(nas))
+        video = dirs["pre"] / "clip.mp4"; video.write_bytes(b"\x00" * 1000)
+        r = client.post("/pre-check/move", params={"name": "clip.mp4"})
+        assert r.json()["ok"] is True
+        # Moved into the configured NAS path, NOT the local default
+        assert (nas / "clip.mp4").exists()
+        assert not (dirs["pre"].parent / "aussortiert" / "clip.mp4").exists()
+
+    def test_failed_move_uses_configured_dir(self, client, dirs, tmp_path):
+        nas = tmp_path / "nas" / "aussortiert"
+        self._set_dir(dirs["config"], str(nas))
+        video = dirs["failed"] / "broken.mp4"; video.write_bytes(b"\x00" * 1000)
+        r = client.post("/failed/move", params={"name": "broken.mp4"})
+        assert r.json()["ok"] is True
+        assert (nas / "broken.mp4").exists()
+
+    def test_empty_setting_uses_local_default(self, client, dirs):
+        self._set_dir(dirs["config"], "")
+        video = dirs["pre"] / "clip.mp4"; video.write_bytes(b"\x00" * 1000)
+        client.post("/pre-check/move", params={"name": "clip.mp4"})
+        assert (dirs["pre"].parent / "aussortiert" / "clip.mp4").exists()
+
+    def test_configured_dir_listed_in_view(self, client, dirs, tmp_path):
+        nas = tmp_path / "nas" / "aussortiert"; nas.mkdir(parents=True)
+        self._set_dir(dirs["config"], str(nas))
+        (nas / "old.mp4").write_bytes(b"\x00" * 1000)
+        r = client.get("/aussortiert")
+        assert "old.mp4" in r.text
