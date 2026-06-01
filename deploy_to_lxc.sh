@@ -33,13 +33,12 @@ while IFS= read -r -d '' py_file; do
 done < <(find "$SRC" -type f -name "*.py" -not -path "*/__pycache__/*" -print0)
 
 # ── Templates ─────────────────────────────────────────────────────────────────
-push "$SRC/web/templates/base.html"             "$TMPL/base.html"
-push "$SRC/web/templates/dashboard.html"        "$TMPL/dashboard.html"
-push "$SRC/web/templates/failed.html"           "$TMPL/failed.html"
-push "$SRC/web/templates/mounts.html"           "$TMPL/mounts.html"
-push "$SRC/web/templates/pre-check.html"        "$TMPL/pre-check.html"
-push "$SRC/web/templates/proxmox.html"          "$TMPL/proxmox.html"
-push "$SRC/web/templates/settings.html"         "$TMPL/settings.html"
+# Sync ALL templates via find — a fixed list silently drops new pages
+# (queue.html, aussortiert.html, …) and the new nav links 500.
+while IFS= read -r -d '' tmpl_file; do
+  rel="${tmpl_file#$SRC/web/templates/}"
+  push "$tmpl_file" "$TMPL/$rel"
+done < <(find "$SRC/web/templates" -type f -name "*.html" -print0)
 
 # ── Restart service ───────────────────────────────────────────────────────────
 echo "Restarting namer-helper…"
