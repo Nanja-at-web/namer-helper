@@ -1418,7 +1418,7 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 
 ## Implementierungsstand stable/precheck (laufend aktualisiert) [E][H]
 
-**Branch:** `stable/precheck` | **Tests:** 369 lokal nach C2 | **Stand:** 2026-05-31
+**Branch:** `stable/precheck` | **Tests:** 445 grün | **Stand:** 2026-06-01
 
 ### Abgeschlossene Schritte
 
@@ -1440,12 +1440,22 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
 | C2 | `training/generator.py`: JSONL aus bestätigten Rules | ✓ |
 | C1 | `training/README.md`, `training/train.sh`, `modelfiles/scene-parser.Modelfile` | ✓ |
 | T | Tests: filename_parser, hasher, StashDB, TPDB, Rules, Identification | ✓ |
+| MVP7 | `queue/`: Review-Queue (Triage + Stapel-Bestätigung, persistent) | ✓ |
+| UX | Löschen verboten → `pre_check_move`/`failed_move` (→ `aussortiert/`) | ✓ |
+| UX | Aussortiert-Ansicht `/aussortiert` + Zurückholen + Dashboard-Kachel | ✓ |
+| UX | Konfigurierbarer `aussortiert_dir` (NAS-Auslagerung, Settings) | ✓ |
+| UX | Nav gruppiert: Namer-Dropdown + Mounts/Proxmox/Log als Settings-Tabs | ✓ |
+| UX | Pre-Check/Queue/Aussortiert als Workflow-Tabs; Settings Pre-Check-Tab | ✓ |
+| Refactor | Verb-Schicht `_act_confirm`/`_act_set_aside`/`_act_defer` (eine Quelle) | ✓ |
+| Tests | `test_queue`, `test_aussortiert`, `test_app` (Nav/Routing) | ✓ |
 
 ### Noch ausstehend
 
 | Schritt | Modul | Priorität |
 |---------|-------|-----------|
+| Deploy | Wochenend-Deploy auf LXC 103 + End-to-End-Verifikation | Hoch |
 | C1-Training | echtes Fine-Tuning extern auf RunPod/Unsloth/CUDA | Niedrig |
+| Cleanup | State-Konsolidierung (5 Speicher: scan_status/lookup_cache/metadata_cache/queue/rules) | Optional |
 
 ### Wichtige Architekturentscheidungen
 
@@ -1468,3 +1478,30 @@ Wenn namer-helper im gleichen LXC wie Namer läuft, ist ffmpeg bereits da.
   - Pre-Check läuft auch ohne ChromaDB/Ollama-Embedding weiter
 - **C2 Trainingsdaten** entstehen nur aus bestätigten Rule-Learning-Entscheidungen
   - keine erfundenen Labels; Output ist immer der bestätigte Ziel-Dateiname
+- **Löschen ist verboten** (Nutzervorgabe, mehrfach bestätigt)
+  - keine `unlink()` auf Videodateien; statt Löschen → verschieben nach `aussortiert/`
+  - `pre_check_move` (pre-check/) und `failed_move` (failed/, + Sidecar) → `aussortiert/`
+  - `aussortiert_dir` konfigurierbar (Settings → Pre-Check), z.B. NAS, damit die
+    kleine LXC-Disk nicht vollläuft; leer = neben pre-check/failed
+  - Cache-`unlink()` (metadata_cache, lookup_cache) bleibt — regenerierbar, keine Videos
+- **MVP7 Review-Queue** (`queue/__init__.py`, persistent `review-queue.json`)
+  - Zustände: pending → confirmed | rejected | deferred; überlebt Neustart
+  - Stapel-Bestätigung NUR deterministisch: confidence ≥ 0.94 UND Quelle
+    enthält Fingerprint/JAV-Code/Rule (Dreifach-Gate). Kontext/Score/LLM bleibt manuell
+  - befüllt während Batch-Scan (best-effort enqueue pro Datei)
+- **Verb-Schicht** (eine Quelle der Wahrheit für Datei-Entscheidungen, in `app.py`)
+  - `_act_confirm` → watch/ + Rule lernen + Queue-Status
+  - `_act_set_aside` → aussortiert/ + Status (Sidecar optional)
+  - `_act_defer` → nur Status
+  - `set_status()` ist No-Op wenn Datei nicht in Queue → Verben funktionieren auch
+    für reine Pre-Check-Dateien. Alle Pre-Check/Queue-Routen rufen diese Verben
+- **WebUI-Struktur**: Top-Nav = `Dashboard │ Pre-Check │ Namer ▾ │ ⚙ Einstellungen`
+  - `Namer ▾` (CSS-`<details>`-Dropdown) = Watch/Failed/Dest (Core-Ordner)
+  - Workflow-Tabs (`workflow_tabs.html`): Dateien | Queue | Aussortiert
+  - Settings-Tabs (`settings_tabs.html`): KI&API | Pre-Check | Mounts | Proxmox | Live-Log
+  - `settings_save` ist Merge-Save (überschreibt nur Body-Felder) — Tabs löschen
+    sich nicht gegenseitig
+- **Deploy** via `deploy_to_lxc.sh <CT>` auf dem Proxmox-Host (nicht im Container):
+  - synct alle `*.py` + `*.html` via `find` (keine feste Liste mehr)
+  - WICHTIG: am Ende muss `systemctl restart namer-helper` greifen — sonst läuft
+    die alte App im Speicher weiter (Templates werden frisch geladen → 500 bei Mismatch)
