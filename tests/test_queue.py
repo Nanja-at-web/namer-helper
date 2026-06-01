@@ -339,3 +339,33 @@ class TestPreCheckMove:
     def test_move_rejects_traversal(self, client, dirs):
         r = client.post("/pre-check/move", params={"name": "../../etc/passwd"})
         assert r.json()["ok"] is False
+
+
+class TestFailedMove:
+    """failed/move must relocate video + sidecar, never delete."""
+
+    def test_move_relocates_video_and_sidecar(self, client, dirs, tmp_path):
+        failed = tmp_path / "failed"
+        failed.mkdir()
+        video = failed / "broken.mp4"
+        video.write_bytes(b"\x00" * 1000)
+        sidecar = failed / "broken_namer.json.gz"
+        sidecar.write_bytes(b"\x1f\x8b")  # gzip magic, content irrelevant
+        r = client.post("/failed/move", params={"name": "broken.mp4"})
+        assert r.json()["ok"] is True
+        sorted_out = failed.parent / "aussortiert"
+        # Both preserved, neither deleted
+        assert (sorted_out / "broken.mp4").exists()
+        assert (sorted_out / "broken_namer.json.gz").exists()
+        assert not video.exists()
+        assert not sidecar.exists()
+
+    def test_move_missing_file_errors(self, client, tmp_path):
+        (tmp_path / "failed").mkdir(exist_ok=True)
+        r = client.post("/failed/move", params={"name": "ghost.mp4"})
+        assert r.json()["ok"] is False
+
+    def test_move_rejects_traversal(self, client, tmp_path):
+        (tmp_path / "failed").mkdir(exist_ok=True)
+        r = client.post("/failed/move", params={"name": "../../etc/passwd"})
+        assert r.json()["ok"] is False

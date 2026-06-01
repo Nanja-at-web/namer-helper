@@ -73,9 +73,9 @@
             ↩ Retry
           </button>
           <button
-            onclick="confirmDelete('/failed/delete?name={{ f.name_encoded }}', {{ loop.index }}, '{{ f.name | replace("'", "\\'") }}')"
-            class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-3 py-1 rounded">
-            🗑 Löschen
+            onclick="confirmMove('/failed/move?name={{ f.name_encoded }}', {{ loop.index }}, '{{ f.name | replace("'", "\\'") }}')"
+            class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">
+            📦 Aussortieren
           </button>
         </td>
       </tr>
@@ -106,10 +106,19 @@ function doAction(url, rowIndex) {
     });
 }
 
-function confirmDelete(url, rowIndex, name) {
-  if (confirm('Datei wirklich löschen?\n' + name)) {
-    doAction(url, rowIndex);
-  }
+function confirmMove(url, rowIndex, name) {
+  if (!confirm('Datei aussortieren (nach aussortiert/ verschieben)?\n' + name)) return;
+  fetch(url, { method: 'POST' })
+    .then(async (res) => {
+      const json = await res.json().catch(() => ({ok: false, error: 'Unbekannter Fehler'}));
+      if (json.ok) {
+        document.getElementById('row-' + rowIndex)?.remove();
+        document.getElementById('lookup-' + rowIndex)?.remove();
+        showMsg('📦 Datei nach aussortiert/ verschoben.', true);
+      } else {
+        showMsg('✗ ' + (json.error || 'Verschieben fehlgeschlagen'), false);
+      }
+    });
 }
 
 function showMsg(text, ok) {

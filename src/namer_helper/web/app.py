@@ -613,19 +613,31 @@ def create_app(
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @app.post("/failed/delete")
-    async def failed_delete(name: str):
+    @app.post("/failed/move")
+    async def failed_move(name: str):
+        """Aussortieren: fehlgeschlagene Datei nach aussortiert/ verschieben.
+
+        Es wird NIE gelöscht. Video + zugehöriges _namer.json.gz-Sidecar
+        wandern gemeinsam in <failed>/../aussortiert/.
+        """
         try:
             paths = read_namer_paths(namer_config)
             failed_dir = paths["failed_dir"]
+            sorted_out_dir = failed_dir.parent / "aussortiert"
             stem = Path(name).stem
-            for filename in (name, f"{stem}_namer.json.gz"):
-                target = _safe_path(failed_dir, filename)
-                if target and target.exists():
-                    target.unlink()
-        except Exception:
-            pass
-        return RedirectResponse("/failed", status_code=303)
+            video = _safe_path(failed_dir, name)
+            if not video or not video.exists():
+                return {"ok": False, "error": "Datei nicht gefunden"}
+            ok, error = _move_to_directory(video, sorted_out_dir)
+            if not ok:
+                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
+            # Sidecar mitnehmen, damit failed/ sauber bleibt (best-effort)
+            sidecar = _safe_path(failed_dir, f"{stem}_namer.json.gz")
+            if sidecar and sidecar.exists():
+                _move_to_directory(sidecar, sorted_out_dir)
+            return {"ok": True, "moved_to": str(sorted_out_dir / video.name)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     @app.get("/failed/logfile", response_class=HTMLResponse)
     async def failed_logfile(request: Request, name: str):
