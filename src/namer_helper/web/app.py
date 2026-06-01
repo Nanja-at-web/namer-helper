@@ -90,6 +90,44 @@ def _recent_reports(report_dir: Path, limit: int = 5) -> list[str]:
     return [p.name for p in reports[:limit]]
 
 
+def _list_sorted_out_files(dirs: list[Path]) -> list[dict]:
+    """List video files in the sort-out folders, newest first. Sidecars hidden."""
+    items: list[dict] = []
+    seen: set[str] = set()
+    for d in dirs:
+        if not d.exists():
+            continue
+        for f in sorted(d.rglob("*")):
+            if not f.is_file() or f.suffix.lower() not in _VIDEO_EXTS:
+                continue
+            if _is_ignored_file(f):
+                continue
+            key = str(f.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                stat = f.stat()
+                size_mb = round(stat.st_size / 1_048_576, 1)
+                mtime = int(stat.st_mtime)
+            except OSError:
+                size_mb, mtime = 0, 0
+            import datetime as _dt
+            moved_at = (
+                _dt.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+                if mtime else "—"
+            )
+            items.append({
+                "name": f.name,
+                "name_encoded": quote(f.name),
+                "size_mb": size_mb,
+                "mtime": mtime,
+                "moved_at": moved_at,
+            })
+    items.sort(key=lambda i: i["mtime"], reverse=True)
+    return items
+
+
 def _list_failed_files(failed_dir: Path) -> list[dict]:
     if not failed_dir.exists():
         return []
@@ -409,12 +447,14 @@ def create_app(
         ai_cfg = load_ai_config(helper_config_dir)
         pre_dir = Path(ai_cfg.pre_check_dir)
         pre_count = len(_list_pre_check_files(pre_dir)) if pre_dir.exists() else 0
+        sorted_out_count = len(_list_sorted_out_files(_sorted_out_dirs()))
         return templates.TemplateResponse(request, "dashboard.html", {
             "status": _service_status(),
             "stats": _dir_stats(namer_config),
             "reports": _recent_reports(report_output_dir),
             "pre_check_count": pre_count,
             "pre_check_dir": str(pre_dir),
+            "sorted_out_count": sorted_out_count,
         })
 
     # ── Service control ──────────────────────────────────────────────────────
@@ -509,6 +549,66 @@ def create_app(
             "files": _list_failed_files(failed_dir),
             "retry_time": _read_cfg_value(namer_config, "retry_time"),
         })
+
+    def _sorted_out_dirs() -> list[Path]:
+        dirs: list[Path] = []
+        try:
+            dirs.append(_get_pre_check_dir().parent / "aussortiert")
+        except Exception:
+            pass
+        try:
+            dirs.append(read_namer_paths(namer_config)["failed_dir"].parent / "aussortiert")
+        except Exception:
+            pass
+        # dedup preserving order
+        out, seen = [], set()
+        for d in dirs:
+            k = str(d)
+            if k not in seen:
+                seen.add(k)
+                out.append(d)
+        return out
+
+    @app.get("/aussortiert", response_class=HTMLResponse)
+    async def sorted_out_page(request: Request):
+        dirs = _sorted_out_dirs()
+        files = _list_sorted_out_files(dirs)
+        total_mb = round(sum(f["size_mb"] for f in files), 1)
+        return templates.TemplateResponse(request, "aussortiert.html", {
+            "files": files,
+            "total_mb": total_mb,
+            "dirs": [str(d) for d in dirs],
+        })
+
+    @app.post("/aussortiert/restore")
+    async def sorted_out_restore(name: str, target: str = "pre-check"):
+        """Datei aus aussortiert/ zurück nach pre-check/ oder failed/ holen."""
+        try:
+            src = None
+            for d in _sorted_out_dirs():
+                cand = _safe_path(d, name)
+                if cand and cand.exists():
+                    src = cand
+                    break
+            if src is None:
+                return {"ok": False, "error": "Datei nicht gefunden"}
+            if target == "failed":
+                dest_dir = read_namer_paths(namer_config)["failed_dir"]
+            else:
+                dest_dir = _get_pre_check_dir()
+            ok, error = _move_to_directory(src, dest_dir)
+            if not ok:
+                return {"ok": False, "error": error or "Verschieben fehlgeschlagen"}
+            # Sidecar mitnehmen falls vorhanden
+            stem = Path(name).stem
+            for d in _sorted_out_dirs():
+                sc = _safe_path(d, f"{stem}_namer.json.gz")
+                if sc and sc.exists():
+                    _move_to_directory(sc, dest_dir)
+                    break
+            return {"ok": True, "restored_to": str(dest_dir / src.name)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     @app.post("/namer/retry-time")
     async def set_retry_time(request: Request):

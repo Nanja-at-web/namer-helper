@@ -45,6 +45,13 @@
     </div>
     <div class="text-xs text-gray-400 mt-1 truncate">{{ pre_check_dir }}</div>
   </a>
+  <a href="/aussortiert" class="bg-white rounded-lg shadow p-4 hover:shadow-md transition block">
+    <div class="text-xs text-gray-400 uppercase tracking-wide mb-1">📦 aussortiert/</div>
+    <div class="text-3xl font-bold {% if sorted_out_count > 0 %}text-amber-600{% else %}text-gray-700{% endif %}">
+      {{ sorted_out_count }}
+    </div>
+    <div class="text-xs text-gray-400 mt-1">verschoben · nichts gelöscht</div>
+  </a>
   {% for dir_name, info in stats.items() %}
   <a href="/files/{{ dir_name }}" class="bg-white rounded-lg shadow p-4 hover:shadow-md transition block">
     <div class="text-xs text-gray-400 uppercase tracking-wide mb-1">{{ dir_name }}/</div>
