@@ -2,8 +2,10 @@
 {% block title %} · Review-Queue{% endblock %}
 {% block content %}
 
+{% set active_wf = 'queue' %}{% include "workflow_tabs.html" %}
+
 <div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-800">Review-Queue</h1>
+  <h2 class="text-lg font-semibold text-gray-700">Review-Queue</h2>
   <div class="text-sm text-gray-500">Triage-Arbeitsliste · nichts wird gelöscht</div>
 </div>
 

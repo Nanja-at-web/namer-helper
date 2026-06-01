@@ -124,12 +124,27 @@ class TestNavStructure:
         assert "⚙ Einstellungen" in m
         assert 'href="/settings"' in m
 
-    def test_workflow_links_still_present(self, client):
-        nav = client.get("/").text if client else ""
+    def test_top_nav_has_single_precheck_entry(self, client):
+        # Workflow collapsed to one top-level "Pre-Check"; Queue/Aussortiert
+        # are now sub-tabs on the page, not separate top-nav links.
         with patch("namer_helper.web.app._service_status", return_value="inactive"):
             nav = client.get("/").text
-        for url in ('/pre-check', '/queue', '/aussortiert'):
-            assert f'href="{url}"' in nav
+        assert 'href="/pre-check"' in nav
+
+    def test_workflow_tabs_on_each_page(self, client):
+        # All three workflow pages share the Dateien|Queue|Aussortiert tab bar
+        for page in ('/pre-check', '/queue', '/aussortiert'):
+            html = client.get(page).text
+            assert 'href="/pre-check"' in html
+            assert 'href="/queue"' in html
+            assert 'href="/aussortiert"' in html
+
+    def test_settings_precheck_tab(self, client):
+        s = client.get("/settings").text
+        assert 'href="/settings/pre-check"' in s
+        pc = client.get("/settings/pre-check").text
+        assert "s-pre-check-dir" in pc
+        assert "s-aussortiert-dir" in pc
 
 
 # ── service control ───────────────────────────────────────────────────────────

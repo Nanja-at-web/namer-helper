@@ -2247,18 +2247,34 @@ def create_app(
         models, error = _list_ollama_models(url.strip())
         return {"ok": error is None, "models": models, "error": error}
 
+    @app.get("/settings/pre-check", response_class=HTMLResponse)
+    async def settings_precheck_page(request: Request):
+        return templates.TemplateResponse(request, "settings_precheck.html", {
+            "ai_cfg": load_ai_config(helper_config_dir),
+        })
+
     @app.post("/settings")
     async def settings_save(request: Request):
+        """Merge-Save: nur die im Body vorhandenen Felder werden überschrieben.
+
+        Settings sind über mehrere Tabs verteilt — ein Speichern auf einem Tab
+        darf die Felder der anderen Tabs nicht zurücksetzen.
+        """
         try:
             body = await request.json()
-            cfg = AIConfig(
-                stashdb_api_key=body.get("stashdb_api_key", "").strip(),
-                theporndb_api_key=body.get("theporndb_api_key", "").strip(),
-                ollama_url=body.get("ollama_url", "").strip() or "http://localhost:11434",
-                ollama_model=body.get("ollama_model", "").strip() or "llama3",
-                pre_check_dir=body.get("pre_check_dir", "").strip() or "/var/lib/namer/pre-check",
-                aussortiert_dir=body.get("aussortiert_dir", "").strip(),
-            )
+            cfg = load_ai_config(helper_config_dir)
+            if "stashdb_api_key" in body:
+                cfg.stashdb_api_key = body["stashdb_api_key"].strip()
+            if "theporndb_api_key" in body:
+                cfg.theporndb_api_key = body["theporndb_api_key"].strip()
+            if "ollama_url" in body:
+                cfg.ollama_url = body["ollama_url"].strip() or "http://localhost:11434"
+            if "ollama_model" in body:
+                cfg.ollama_model = body["ollama_model"].strip() or "llama3"
+            if "pre_check_dir" in body:
+                cfg.pre_check_dir = body["pre_check_dir"].strip() or "/var/lib/namer/pre-check"
+            if "aussortiert_dir" in body:
+                cfg.aussortiert_dir = body["aussortiert_dir"].strip()
             save_ai_config(helper_config_dir, cfg)
             return {"ok": True}
         except Exception as e:

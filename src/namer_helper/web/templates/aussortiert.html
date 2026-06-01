@@ -2,8 +2,10 @@
 {% block title %} · Aussortiert{% endblock %}
 {% block content %}
 
+{% set active_wf = 'aussortiert' %}{% include "workflow_tabs.html" %}
+
 <div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold text-gray-800">📦 Aussortiert</h1>
+  <h2 class="text-lg font-semibold text-gray-700">📦 Aussortiert</h2>
   <div class="text-sm text-gray-500">{{ files|length }} Dateien · {{ total_mb }} MB</div>
 </div>
 

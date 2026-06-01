@@ -95,37 +95,10 @@
   </p>
 </div>
 
-<!-- Pre-Check -->
-<div class="bg-white rounded-lg shadow p-6 mb-6">
-  <h2 class="font-semibold text-gray-700 mb-1">Pre-Check Verzeichnis</h2>
-  <p class="text-sm text-gray-500 mb-4">
-    Dateien die hier abgelegt werden können vor der Namer-Verarbeitung geprüft und
-    bereinigt werden. Namer greift auf dieses Verzeichnis <strong>nicht</strong> direkt zu —
-    erst nach "→ Watch/" startet die Verarbeitung.
-  </p>
-  <div class="max-w-lg">
-    <label class="block text-xs font-medium text-gray-500 mb-1">Verzeichnispfad</label>
-    <input id="s-pre-check-dir" type="text" value="{{ ai_cfg.pre_check_dir }}"
-      placeholder="/var/lib/namer/pre-check"
-      class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
-  </div>
-</div>
-
-<div class="bg-white rounded-lg shadow p-5 mb-6">
-  <h2 class="font-semibold text-gray-800 mb-1">📦 Aussortiert-Ordner</h2>
-  <p class="text-xs text-gray-500 mb-3">
-    Aussortierte Dateien werden hierhin verschoben (nie gelöscht). <b>Leer lassen</b>
-    = neben pre-check/failed auf der lokalen Disk. Auf eine <b>NAS</b> zeigen lassen
-    (z.B. <span class="font-mono">/mnt/nas/aussortiert</span>), damit die kleine
-    Container-Disk nicht vollläuft.
-  </p>
-  <div class="max-w-lg">
-    <label class="block text-xs font-medium text-gray-500 mb-1">Aussortier-Pfad (optional)</label>
-    <input id="s-aussortiert-dir" type="text" value="{{ ai_cfg.aussortiert_dir }}"
-      placeholder="/mnt/nas/aussortiert  (leer = lokal)"
-      class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
-  </div>
-</div>
+<p class="text-xs text-gray-400 mb-6">
+  Verzeichnisse (Pre-Check, Aussortiert) findest du im Tab
+  <a href="/settings/pre-check" class="text-indigo-500 hover:underline">Pre-Check</a>.
+</p>
 
 <div id="msg" class="hidden mb-4 text-sm rounded p-3"></div>
 
@@ -141,8 +114,6 @@ async function saveSettings() {
     ollama_url:      document.getElementById('s-ollama-url').value.trim(),
     ollama_model:    document.getElementById('s-ollama-model').value.trim(),
     theporndb_api_key: document.getElementById('s-tpdb-key').value,
-    pre_check_dir:   document.getElementById('s-pre-check-dir').value.trim(),
-    aussortiert_dir: document.getElementById('s-aussortiert-dir').value.trim(),
   };
   const res = await fetch('/settings', {
     method: 'POST',
