@@ -1888,16 +1888,25 @@ def create_app(
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @app.post("/pre-check/delete")
-    async def pre_check_delete(name: str):
+    @app.post("/pre-check/move")
+    async def pre_check_move(name: str):
+        """Aussortieren: Datei aus pre-check/ in den Aussortier-Ordner verschieben.
+
+        Es wird NIE gelöscht — die Datei wird nach <pre-check>/../aussortiert/
+        verschoben, damit nichts unwiederbringlich verloren geht.
+        """
         try:
             pre_dir = _get_pre_check_dir()
-            target = _safe_path(pre_dir, name)
-            if target and target.exists():
-                target.unlink()
-        except Exception:
-            pass
-        return RedirectResponse("/pre-check", status_code=303)
+            src = _safe_path(pre_dir, name)
+            if not src or not src.exists():
+                return {"ok": False, "error": "Datei nicht gefunden"}
+            sorted_out_dir = pre_dir.parent / "aussortiert"
+            ok, error = _move_to_directory(src, sorted_out_dir)
+            if not ok:
+                return {"ok": False, "error": error or "Datei konnte nicht verschoben werden"}
+            return {"ok": True, "moved_to": str(sorted_out_dir / src.name)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ── Review queue (MVP7) ───────────────────────────────────────────────────
 

@@ -193,9 +193,9 @@
             → Watch
           </button>
           <button
-            onclick="confirmDeleteForRow({{ loop.index }})"
-            class="bg-red-100 hover:bg-red-200 text-red-700 text-xs px-3 py-1 rounded">
-            🗑 Löschen
+            onclick="moveOutForRow({{ loop.index }})"
+            class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">
+            📦 Aussortieren
           </button>
         </td>
       </tr>
@@ -357,9 +357,9 @@ function sendToWatchForRow(rowIndex) {
   if (encoded) sendToWatch(encoded, rowIndex);
 }
 
-function confirmDeleteForRow(rowIndex) {
+function moveOutForRow(rowIndex) {
   const encoded = rowEncoded(rowIndex);
-  if (encoded) confirmDelete(encoded, rowIndex, rowDisplayName(rowIndex));
+  if (encoded) moveOut(encoded, rowIndex, rowDisplayName(rowIndex));
 }
 
 async function sendToWatch(encodedName, rowIndex) {
@@ -386,11 +386,17 @@ async function sendAll() {
   }
 }
 
-function confirmDelete(encodedName, rowIndex, name) {
-  if (!confirm('Datei wirklich löschen?\n' + name)) return;
-  fetch('/pre-check/delete?name=' + encodedName, {method: 'POST'}).then(() => {
-    document.getElementById('row-' + rowIndex)?.remove();
-    document.getElementById('lookup-' + rowIndex)?.remove();
+function moveOut(encodedName, rowIndex, name) {
+  if (!confirm('Datei aussortieren (nach aussortiert/ verschieben)?\n' + name)) return;
+  fetch('/pre-check/move?name=' + encodedName, {method: 'POST'}).then(async (res) => {
+    const json = await res.json().catch(() => ({ok: false, error: 'Unbekannter Fehler'}));
+    if (json.ok) {
+      document.getElementById('row-' + rowIndex)?.remove();
+      document.getElementById('lookup-' + rowIndex)?.remove();
+      showMsg('📦 Datei nach aussortiert/ verschoben.', true);
+    } else {
+      showMsg('✗ ' + (json.error || 'Verschieben fehlgeschlagen'), false);
+    }
   });
 }
 

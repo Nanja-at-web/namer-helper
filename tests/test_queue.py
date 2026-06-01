@@ -315,3 +315,27 @@ class TestQueueRoutes:
         q.set_status(qpath, "f.mp4", q.CONFIRMED)
         r = client.post("/pre-check/queue/clear-resolved")
         assert r.json()["removed"] == 1
+
+
+class TestPreCheckMove:
+    """Aussortieren must MOVE, never delete (recurring user requirement)."""
+
+    def test_move_relocates_file_not_deletes(self, client, dirs):
+        video = dirs["pre"] / "unwanted.mp4"
+        video.write_bytes(b"\x00" * 1000)
+        r = client.post("/pre-check/move", params={"name": "unwanted.mp4"})
+        body = r.json()
+        assert body["ok"] is True
+        # File is gone from pre-check…
+        assert not video.exists()
+        # …but preserved in the sort-out folder, never deleted
+        sorted_out = dirs["pre"].parent / "aussortiert" / "unwanted.mp4"
+        assert sorted_out.exists()
+
+    def test_move_missing_file_errors(self, client):
+        r = client.post("/pre-check/move", params={"name": "ghost.mp4"})
+        assert r.json()["ok"] is False
+
+    def test_move_rejects_traversal(self, client, dirs):
+        r = client.post("/pre-check/move", params={"name": "../../etc/passwd"})
+        assert r.json()["ok"] is False
