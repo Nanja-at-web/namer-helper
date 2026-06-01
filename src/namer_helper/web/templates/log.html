@@ -3,10 +3,10 @@
 
 {% block content %}
 
+{% set active_tab = 'log' %}{% include "settings_tabs.html" %}
 <div class="flex items-center justify-between mb-4">
   <div class="flex items-center gap-3">
-    <a href="/" class="text-gray-400 hover:text-gray-600 text-sm">← Dashboard</a>
-    <h1 class="text-2xl font-bold text-gray-800">Live Log — namer-watchdog</h1>
+    <h2 class="text-lg font-semibold text-gray-700">Live Log — namer-watchdog</h2>
   </div>
   <div class="flex gap-2">
     <button id="btn-pause"

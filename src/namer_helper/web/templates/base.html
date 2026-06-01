@@ -5,22 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>namer-helper{% block title %}{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* hide default <details> triangle on the Namer dropdown */
+    nav details > summary { list-style: none; }
+    nav details > summary::-webkit-details-marker { display: none; }
+  </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
 
-  <nav class="bg-gray-900 text-white px-6 py-3 flex items-center gap-6 shadow">
-    <a href="/" class="font-bold text-lg tracking-tight">namer-helper</a>
-    <a href="/" class="text-gray-300 hover:text-white text-sm">Dashboard</a>
-    <a href="/files/watch" class="text-gray-300 hover:text-white text-sm">Watch</a>
-    <a href="/pre-check" class="text-gray-300 hover:text-white text-sm">Pre-Check</a>
-    <a href="/queue" class="text-gray-300 hover:text-white text-sm">Queue</a>
-    <a href="/failed" class="text-gray-300 hover:text-white text-sm">Failed</a>
-    <a href="/aussortiert" class="text-gray-300 hover:text-white text-sm">Aussortiert</a>
-    <a href="/files/dest" class="text-gray-300 hover:text-white text-sm">Dest</a>
-    <a href="/mounts" class="text-gray-300 hover:text-white text-sm">Mounts</a>
-    <a href="/proxmox" class="text-gray-300 hover:text-white text-sm">Proxmox</a>
-    <a href="/log" class="text-gray-300 hover:text-white text-sm">Live Log</a>
-    <a href="/settings" class="text-gray-300 hover:text-white text-sm ml-auto">⚙ Einstellungen</a>
+  <nav class="bg-gray-900 text-white px-6 py-3 flex items-center gap-4 shadow text-sm">
+    <a href="/" class="font-bold text-lg tracking-tight mr-1">namer-helper</a>
+    <a href="/" class="text-gray-300 hover:text-white">Dashboard</a>
+
+    <span class="text-gray-600 select-none">│</span>
+    <!-- Verarbeitung (Helper-Workflow) -->
+    <a href="/pre-check" class="text-gray-300 hover:text-white">Pre-Check</a>
+    <a href="/queue" class="text-gray-300 hover:text-white">Queue</a>
+    <a href="/aussortiert" class="text-gray-300 hover:text-white">Aussortiert</a>
+
+    <span class="text-gray-600 select-none">│</span>
+    <!-- Namer Core-Ordner (Dropdown) -->
+    <details class="relative">
+      <summary class="text-gray-300 hover:text-white cursor-pointer">Namer ▾</summary>
+      <div class="absolute left-0 mt-2 bg-gray-800 rounded shadow-lg py-1 z-20 min-w-[8rem]">
+        <a href="/files/watch" class="block px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white">Watch</a>
+        <a href="/failed" class="block px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white">Failed</a>
+        <a href="/files/dest" class="block px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white">Dest</a>
+      </div>
+    </details>
+
+    <a href="/settings" class="text-gray-300 hover:text-white ml-auto">⚙ Einstellungen</a>
   </nav>
 
   <main class="max-w-5xl mx-auto px-4 py-8">

@@ -1,0 +1,15 @@
+{# Shared sub-navigation for the Einstellungen section.
+   Include with: {% set active_tab = 'ki' %}{% include "settings_tabs.html" %}
+   active_tab in {ki, mounts, proxmox, log} #}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-800 mb-3">⚙ Einstellungen</h1>
+  <div class="border-b border-gray-200 flex gap-1 text-sm">
+    {% set tabs = [('ki','KI & API','/settings'), ('mounts','Mounts','/mounts'), ('proxmox','Proxmox','/proxmox'), ('log','Live-Log','/log')] %}
+    {% for key, label, url in tabs %}
+    <a href="{{ url }}"
+       class="px-4 py-2 -mb-px border-b-2 {% if active_tab == key %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-gray-500 hover:text-gray-700{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>

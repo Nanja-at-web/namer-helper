@@ -3,7 +3,8 @@
 
 {% block content %}
 
-<h1 class="text-2xl font-bold text-gray-800 mb-2">Proxmox SSH-Integration</h1>
+{% set active_tab = 'proxmox' %}{% include "settings_tabs.html" %}
+<h2 class="text-lg font-semibold text-gray-700 mb-2">Proxmox SSH-Integration</h2>
 <p class="text-sm text-gray-500 mb-6">
   namer-helper läuft im LXC-Container und kann NFS nicht direkt mounten.
   Mit einer SSH-Verbindung zum Proxmox-Host werden die Mounts dort eingerichtet

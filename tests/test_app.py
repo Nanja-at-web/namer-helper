@@ -96,6 +96,42 @@ class TestRoutesExist:
         assert r.status_code == 404
 
 
+class TestNavStructure:
+    """Grouped nav: Namer dropdown + Mounts/Proxmox/Log moved into Settings tabs."""
+
+    def test_namer_dropdown_present(self, client):
+        nav = client.get("/pre-check").text
+        assert "Namer ▾" in nav
+        # The three Core dirs live inside the dropdown
+        assert "/files/watch" in nav
+        assert "/files/dest" in nav
+
+    def test_mounts_proxmox_log_not_in_top_nav(self, client):
+        # These labels must no longer appear as standalone top-level nav links
+        nav = client.get("/pre-check").text
+        assert ">Mounts<" not in nav
+        assert ">Proxmox<" not in nav
+        assert ">Live Log<" not in nav
+
+    def test_settings_has_tab_bar(self, client):
+        s = client.get("/settings").text
+        assert "⚙ Einstellungen" in s
+        for url in ('/settings', '/mounts', '/proxmox', '/log'):
+            assert f'href="{url}"' in s
+
+    def test_mounts_page_shows_settings_tabs(self, client):
+        m = client.get("/mounts").text
+        assert "⚙ Einstellungen" in m
+        assert 'href="/settings"' in m
+
+    def test_workflow_links_still_present(self, client):
+        nav = client.get("/").text if client else ""
+        with patch("namer_helper.web.app._service_status", return_value="inactive"):
+            nav = client.get("/").text
+        for url in ('/pre-check', '/queue', '/aussortiert'):
+            assert f'href="{url}"' in nav
+
+
 # ── service control ───────────────────────────────────────────────────────────
 
 class TestServiceControl:

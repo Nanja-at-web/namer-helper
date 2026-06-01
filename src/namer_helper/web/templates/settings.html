@@ -3,7 +3,7 @@
 
 {% block content %}
 
-<h1 class="text-2xl font-bold text-gray-800 mb-6">Einstellungen</h1>
+{% set active_tab = 'ki' %}{% include "settings_tabs.html" %}
 
 <!-- StashDB -->
 <div class="bg-white rounded-lg shadow p-6 mb-6">
