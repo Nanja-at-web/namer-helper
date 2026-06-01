@@ -1654,6 +1654,18 @@ def create_app(
                     identification=result.get("identification"),
                     result=result,
                 )
+                # Enqueue into the review queue (MVP7) — best-effort, never blocks.
+                try:
+                    from namer_helper import queue as review_queue
+                    review_queue.enqueue(
+                        helper_config_dir / "review-queue.json",
+                        name=name,
+                        identification=result.get("identification"),
+                        oshash=(result.get("hashes") or {}).get("oshash"),
+                        tpdb_id=result.get("tpdb_sku") or None,
+                    )
+                except Exception:
+                    pass
             scan_status.finish(scan_id)
         except Exception as exc:
             scan_status.fail(scan_id, str(exc))
@@ -1886,6 +1898,106 @@ def create_app(
         except Exception:
             pass
         return RedirectResponse("/pre-check", status_code=303)
+
+    # ── Review queue (MVP7) ───────────────────────────────────────────────────
+
+    def _queue_path() -> Path:
+        return helper_config_dir / "review-queue.json"
+
+    def _confirm_queue_item(item) -> tuple[bool, str | None]:
+        """Send one queued file to watch/ for Namer, learn a rule, mark confirmed.
+
+        Returns (ok, error). Confirmation = move to watch_dir so Namer Core
+        performs the actual rename (Leitprinzip: Core bleibt ausführende Instanz).
+        """
+        from namer_helper import queue as review_queue
+        pre_dir = _get_pre_check_dir()
+        src = _safe_path(pre_dir, item.name)
+        if not src or not src.exists():
+            review_queue.set_status(_queue_path(), item.name, review_queue.REJECTED)
+            return False, "Datei nicht gefunden"
+
+        oshash = item.oshash
+        if not oshash:
+            try:
+                from namer_helper.namer_bridge.hasher import compute_oshash
+                oshash = compute_oshash(src) or ""
+            except Exception:
+                oshash = ""
+
+        # Learn the confirmed decision so this file never hits the API again.
+        if oshash and item.suggested_name:
+            try:
+                from namer_helper.rules import learn_rule
+                learn_rule(
+                    helper_config_dir / "rules.yaml",
+                    oshash=oshash,
+                    suggested_name=item.suggested_name,
+                    tpdb_id=item.tpdb_id or None,
+                    source="user_confirmed",
+                )
+            except Exception:
+                pass
+
+        paths = read_namer_paths(namer_config)
+        ok, error = _move_to_directory(src, paths["watch_dir"])
+        if not ok:
+            return False, error or "Datei konnte nicht verschoben werden"
+        review_queue.set_status(_queue_path(), item.name, review_queue.CONFIRMED)
+        return True, None
+
+    @app.get("/pre-check/queue")
+    async def pre_check_queue_list():
+        from namer_helper import queue as review_queue
+        items = review_queue.load_queue(_queue_path())
+        return {
+            "ok": True,
+            "summary": review_queue.summary(items),
+            "items": [i.to_dict() for i in review_queue.sort_for_review(items)],
+        }
+
+    @app.post("/pre-check/queue/confirm")
+    async def pre_check_queue_confirm(name: str):
+        from namer_helper import queue as review_queue
+        item = review_queue.get_item(_queue_path(), name)
+        if item is None:
+            return {"ok": False, "error": "Nicht in der Queue"}
+        ok, error = _confirm_queue_item(item)
+        return {"ok": ok, "error": error}
+
+    @app.post("/pre-check/queue/confirm-batch")
+    async def pre_check_queue_confirm_batch():
+        """Confirm every batch-eligible item: deterministic matches only."""
+        from namer_helper import queue as review_queue
+        items = review_queue.load_queue(_queue_path())
+        eligible = review_queue.batch_eligible(items)
+        confirmed, failed = 0, []
+        for item in eligible:
+            ok, error = _confirm_queue_item(item)
+            if ok:
+                confirmed += 1
+            else:
+                failed.append({"name": item.name, "error": error})
+        return {"ok": True, "confirmed": confirmed, "failed": failed,
+                "eligible": len(eligible)}
+
+    @app.post("/pre-check/queue/reject")
+    async def pre_check_queue_reject(name: str):
+        from namer_helper import queue as review_queue
+        ok = review_queue.set_status(_queue_path(), name, review_queue.REJECTED)
+        return {"ok": ok}
+
+    @app.post("/pre-check/queue/defer")
+    async def pre_check_queue_defer(name: str):
+        from namer_helper import queue as review_queue
+        ok = review_queue.set_status(_queue_path(), name, review_queue.DEFERRED)
+        return {"ok": ok}
+
+    @app.post("/pre-check/queue/clear-resolved")
+    async def pre_check_queue_clear_resolved():
+        from namer_helper import queue as review_queue
+        removed = review_queue.remove_resolved(_queue_path())
+        return {"ok": True, "removed": removed}
 
     # ── AI lookup for failed files ────────────────────────────────────────────
 
