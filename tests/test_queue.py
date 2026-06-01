@@ -369,3 +369,31 @@ class TestFailedMove:
         (tmp_path / "failed").mkdir(exist_ok=True)
         r = client.post("/failed/move", params={"name": "../../etc/passwd"})
         assert r.json()["ok"] is False
+
+
+class TestQueuePage:
+    """The /queue HTML triage page renders and reflects queue contents."""
+
+    def test_queue_page_renders_empty(self, client):
+        r = client.get("/queue")
+        assert r.status_code == 200
+        assert "Review-Queue" in r.text
+
+    def test_queue_page_shows_review_and_eligible(self, client, dirs):
+        qpath = dirs["config"] / "review-queue.json"
+        q.enqueue(qpath, name="fp.mp4", identification=_ident(
+            confidence=0.96, source="ThePornDB Fingerprint", suggested="FP.mp4"),
+            oshash=VALID_OSHASH)
+        q.enqueue(qpath, name="ctx.mp4", identification=_ident(
+            status="likely", confidence=0.76, source="ThePornDB Kontextsuche",
+            action="review", suggested="CTX.mp4"))
+        r = client.get("/queue")
+        assert r.status_code == 200
+        assert "fp.mp4" in r.text
+        assert "ctx.mp4" in r.text
+        # batch button reflects the one eligible item
+        assert "Alle 1 stapelbaren" in r.text
+
+    def test_queue_page_in_nav(self, client):
+        r = client.get("/queue")
+        assert 'href="/queue"' in r.text

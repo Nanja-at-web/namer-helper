@@ -1967,6 +1967,21 @@ def create_app(
         review_queue.set_status(_queue_path(), item.name, review_queue.CONFIRMED)
         return True, None
 
+    @app.get("/queue", response_class=HTMLResponse)
+    async def queue_page(request: Request):
+        from namer_helper import queue as review_queue
+        items = review_queue.load_queue(_queue_path())
+        ordered = review_queue.sort_for_review(items)
+        needs_review = [i.to_dict() for i in ordered if i.status == review_queue.PENDING and not review_queue.is_batch_eligible(i)]
+        eligible = [i.to_dict() for i in ordered if review_queue.is_batch_eligible(i)]
+        deferred = [i.to_dict() for i in ordered if i.status == review_queue.DEFERRED]
+        return templates.TemplateResponse(request, "queue.html", {
+            "summary": review_queue.summary(items),
+            "needs_review": needs_review,
+            "eligible": eligible,
+            "deferred": deferred,
+        })
+
     @app.get("/pre-check/queue")
     async def pre_check_queue_list():
         from namer_helper import queue as review_queue

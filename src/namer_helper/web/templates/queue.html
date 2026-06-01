@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %} · Review-Queue{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-bold text-gray-800">Review-Queue</h1>
+  <div class="text-sm text-gray-500">Triage-Arbeitsliste · nichts wird gelöscht</div>
+</div>
+
+<!-- Summary bar -->
+<div class="bg-white rounded-lg shadow p-4 mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+  <span><b>{{ summary.total }}</b> gesamt</span>
+  <span class="text-amber-700">⚠ <b>{{ summary.needs_review }}</b> Review nötig</span>
+  <span class="text-green-700">✓ <b>{{ summary.batch_eligible }}</b> stapelbar</span>
+  <span class="text-gray-500">⏸ <b>{{ summary.deferred }}</b> zurückgestellt</span>
+  <span class="text-gray-400 ml-auto">{{ summary.confirmed }} bestätigt · {{ summary.rejected }} aussortiert</span>
+</div>
+
+<div id="msg" class="hidden mb-4 text-sm rounded p-2"></div>
+
+<!-- Batch action -->
+<div class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center gap-3">
+  <button onclick="confirmBatch()"
+    class="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded font-medium {% if summary.batch_eligible == 0 %}opacity-40 cursor-not-allowed{% endif %}"
+    {% if summary.batch_eligible == 0 %}disabled{% endif %}>
+    ✓ Alle {{ summary.batch_eligible }} stapelbaren bestätigen → watch/
+  </button>
+  <span class="text-xs text-gray-500">nur deterministische Treffer (Fingerprint · JAV-Code · Rule, ≥ 0.94)</span>
+  <button onclick="clearResolved()"
+    class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded">
+    Liste aufräumen
+  </button>
+</div>
+
+<!-- Needs review -->
+<h2 class="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-2">
+  ⚠ Braucht Entscheidung ({{ needs_review|length }})
+</h2>
+{% if needs_review %}
+<div class="bg-white rounded-lg shadow divide-y mb-8">
+  {% for item in needs_review %}
+  <div id="q-{{ item.name|urlencode }}" class="p-4">
+    <div class="flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <div class="font-mono text-sm text-gray-800 truncate">{{ item.name }}</div>
+        <div class="text-xs text-gray-500 mt-1">
+          {{ item.source }} · Conf {{ "%.2f"|format(item.confidence) }} · {{ item.ident_status }}
+        </div>
+        <div class="text-sm text-gray-700 mt-1">
+          → {{ item.suggested_name or "— keine Vorschau —" }}
+        </div>
+        {% if item.reason %}<div class="text-xs text-amber-700 mt-1">{{ item.reason }}</div>{% endif %}
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button onclick="act('confirm','{{ item.name|urlencode }}')"
+          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded" title="Bestätigen → watch/">✓</button>
+        <button onclick="act('reject','{{ item.name|urlencode }}')"
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded" title="Aussortieren">✕</button>
+        <button onclick="act('defer','{{ item.name|urlencode }}')"
+          class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded" title="Zurückstellen">⏸</button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-sm text-gray-400 mb-8">Keine offenen Review-Fälle. 🎉</div>
+{% endif %}
+
+<!-- Batch eligible -->
+<details class="mb-8" {% if needs_review %}{% else %}open{% endif %}>
+  <summary class="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2 cursor-pointer">
+    ✓ Stapelbar — deterministisch ({{ eligible|length }})
+  </summary>
+  {% if eligible %}
+  <div class="bg-white rounded-lg shadow divide-y mt-2">
+    {% for item in eligible %}
+    <div id="q-{{ item.name|urlencode }}" class="p-3 flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <span class="font-mono text-sm text-gray-800">{{ item.name }}</span>
+        <span class="text-xs text-gray-500 ml-2">{{ item.source }} · {{ "%.2f"|format(item.confidence) }}</span>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button onclick="act('confirm','{{ item.name|urlencode }}')"
+          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded">✓</button>
+        <button onclick="act('reject','{{ item.name|urlencode }}')"
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">✕</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-sm text-gray-400 mt-2">Keine stapelbaren Treffer.</div>
+  {% endif %}
+</details>
+
+<!-- Deferred -->
+{% if deferred %}
+<details class="mb-8">
+  <summary class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 cursor-pointer">
+    ⏸ Zurückgestellt ({{ deferred|length }})
+  </summary>
+  <div class="bg-white rounded-lg shadow divide-y mt-2">
+    {% for item in deferred %}
+    <div id="q-{{ item.name|urlencode }}" class="p-3 flex items-center justify-between gap-4">
+      <span class="font-mono text-sm text-gray-700">{{ item.name }}</span>
+      <div class="flex gap-1 shrink-0">
+        <button onclick="act('confirm','{{ item.name|urlencode }}')"
+          class="bg-green-100 hover:bg-green-200 text-green-700 text-xs px-3 py-1 rounded">✓</button>
+        <button onclick="act('reject','{{ item.name|urlencode }}')"
+          class="bg-amber-100 hover:bg-amber-200 text-amber-700 text-xs px-3 py-1 rounded">✕</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+<script>
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'mb-4 text-sm rounded p-2 ' + (ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
+  el.classList.remove('hidden');
+}
+
+async function act(action, encodedName) {
+  const res = await fetch('/pre-check/queue/' + action + '?name=' + encodedName, {method: 'POST'});
+  const json = await res.json().catch(() => ({ok: false, error: 'Unbekannter Fehler'}));
+  if (json.ok) {
+    document.getElementById('q-' + encodedName)?.remove();
+    const labels = {confirm: '✓ bestätigt → watch/', reject: '📦 aussortiert', defer: '⏸ zurückgestellt'};
+    showMsg(labels[action] || 'OK', true);
+    setTimeout(() => location.reload(), 700);
+  } else {
+    showMsg('✗ ' + (json.error || 'Fehlgeschlagen'), false);
+  }
+}
+
+async function confirmBatch() {
+  if (!confirm('Alle stapelbaren (deterministischen) Treffer bestätigen und nach watch/ senden?')) return;
+  const res = await fetch('/pre-check/queue/confirm-batch', {method: 'POST'});
+  const json = await res.json().catch(() => ({ok: false}));
+  if (json.ok) {
+    showMsg('✓ ' + json.confirmed + ' von ' + json.eligible + ' bestätigt → watch/.', true);
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    showMsg('✗ Stapel-Bestätigung fehlgeschlagen', false);
+  }
+}
+
+async function clearResolved() {
+  const res = await fetch('/pre-check/queue/clear-resolved', {method: 'POST'});
+  const json = await res.json().catch(() => ({ok: false}));
+  if (json.ok) { showMsg(json.removed + ' erledigte Einträge entfernt.', true); setTimeout(() => location.reload(), 700); }
+}
+</script>
+
+{% endblock %}
