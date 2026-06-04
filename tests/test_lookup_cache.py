@@ -60,3 +60,20 @@ def test_stable_no_match_is_cacheable():
         "stashdb_error": "Datei nicht gefunden oder zu klein für Hash",
         "tpdb_error": "Keine Treffer",
     })
+
+
+def test_clear_all(tmp_path, monkeypatch):
+    from namer_helper.web import lookup_cache
+    monkeypatch.setattr(lookup_cache, "CACHE_DIR", tmp_path / "cache")
+    for h in ("aaaa", "bbbb", "cccc"):
+        lookup_cache.set(h, {"ok": True})
+    assert lookup_cache.stats()["count"] == 3
+    removed = lookup_cache.clear_all()
+    assert removed == 3
+    assert lookup_cache.stats()["count"] == 0
+
+
+def test_clear_all_empty(tmp_path, monkeypatch):
+    from namer_helper.web import lookup_cache
+    monkeypatch.setattr(lookup_cache, "CACHE_DIR", tmp_path / "empty")
+    assert lookup_cache.clear_all() == 0

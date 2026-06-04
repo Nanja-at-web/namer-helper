@@ -8,8 +8,10 @@
 {% if total > shown %}
 <div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3 mb-4">
   ⚠ Sehr viele Dateien — es werden nur die ersten <b>{{ shown }}</b> von
-  <b>{{ total }}</b> angezeigt. Nutze „Alle scannen" für die Stapel-Verarbeitung
-  und die <a href="/queue" class="underline">Queue</a> zum Bestätigen.
+  <b>{{ total }}</b> angezeigt (sonst stürzt der Browser ab). Alle bereits
+  analysierten Ergebnisse findest du in der
+  <a href="/queue" class="underline font-medium">Queue</a>. Mit dem Filter
+  unten kannst du die Liste eingrenzen.
 </div>
 {% endif %}
 
@@ -26,6 +28,11 @@
     <button onclick="sendAll()"
       class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded font-medium">
       Alle → Watch/
+    </button>
+    <button onclick="clearLookupCache()"
+      class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded"
+      title="Alle zwischengespeicherten Analyse-Ergebnisse verwerfen und neu analysieren">
+      🗑 Lookup-Cache leeren
     </button>
   </div>
   {% endif %}
@@ -391,6 +398,19 @@ async function sendAll() {
     setTimeout(() => location.reload(), 2000);
   } else {
     showMsg('✗ ' + json.error, false);
+  }
+}
+
+async function clearLookupCache() {
+  if (!confirm('Gesamten Lookup-Cache leeren?\nAlle Dateien müssen danach neu analysiert werden — ' +
+              'nötig, damit die korrigierte Erkennungslogik greift.')) return;
+  const res = await fetch('/pre-check/cache/clear-all', {method: 'POST'});
+  const json = await res.json().catch(() => ({ok: false}));
+  if (json.ok) {
+    showMsg('✓ ' + json.removed + ' Cache-Einträge gelöscht. Bitte neu analysieren.', true);
+    setTimeout(() => location.reload(), 1500);
+  } else {
+    showMsg('✗ Cache konnte nicht geleert werden', false);
   }
 }
 

@@ -104,6 +104,25 @@ def invalidate(oshash: str) -> bool:
     return False
 
 
+def clear_all() -> int:
+    """Delete every cached lookup result. Returns how many were removed.
+
+    Used to force re-analysis of all files with updated identification logic
+    (the cache never expires, so a logic fix only applies after a clear).
+    """
+    removed = 0
+    try:
+        for f in CACHE_DIR.glob("*.json"):
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+    except Exception:
+        pass
+    return removed
+
+
 def stats() -> dict:
     try:
         files = list(CACHE_DIR.glob("*.json"))

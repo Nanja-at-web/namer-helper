@@ -1887,6 +1887,17 @@ def create_app(
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    @app.post("/pre-check/cache/clear-all")
+    async def pre_check_cache_clear_all():
+        """Leert den gesamten Lookup-Cache → alle Dateien werden neu analysiert
+        (nötig nach Logik-Fixes, da der Cache nie abläuft)."""
+        try:
+            from namer_helper.web import lookup_cache
+            removed = lookup_cache.clear_all()
+            return {"ok": True, "removed": removed}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     @app.post("/pre-check/rename")
     async def pre_check_rename(name: str, new_name: str, oshash: str = "", tpdb_id: str = ""):
         try:
