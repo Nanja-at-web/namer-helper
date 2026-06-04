@@ -131,6 +131,23 @@ class TestStructuralMarkers:
         info = parse_filename("Scene.Title.#jav.#Jane_Doe.#asian.mp4")
         assert info.performers == ["Jane Doe"]
 
+    def test_date_iso(self):
+        assert parse_filename("Studio - 2024-03-15 - Title.mp4").date == "2024-03-15"
+
+    def test_date_dd_mm_yyyy(self):
+        assert parse_filename("Studio - 15.03.2024 - Title.mp4").date == "2024-03-15"
+
+    def test_date_us_mm_dd_yyyy_corrected(self):
+        # Regression: 03-15-2024 (US) must NOT become invalid "2024-15-03"
+        assert parse_filename("Studio - 03-15-2024 - Title.mp4").date == "2024-03-15"
+
+    def test_date_real_dd_mm(self):
+        assert parse_filename("Studio - 25.12.2024 - Title.mp4").date == "2024-12-25"
+
+    def test_impossible_date_rejected(self):
+        # month 13 / day 14 is impossible in any order → no date, not garbage
+        assert parse_filename("Studio - 2024-13-14 - Title.mp4").date is None
+
     def test_comma_separated_performers_not_studio(self):
         # "A, B - Studio - Title": comma list must be performers, not studio
         info = parse_filename("Alexa Grace, Blair Summers - Studio - Title.mp4")

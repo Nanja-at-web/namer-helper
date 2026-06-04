@@ -116,10 +116,12 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     if dm:
         g = dm.groupdict()
         if g.get('y'):
-            info.date = f"{g['y']}-{g['m']}-{g['d']}"
+            info.date = _build_date(g['y'], g['m'], g['d'])
         elif g.get('y2'):
-            info.date = f"{g['y2']}-{g['m2']}-{g['d2']}"
-        work = work[:dm.start()] + ' ' + work[dm.end():]
+            info.date = _build_date(g['y2'], g['m2'], g['d2'])
+        # Only consume the matched span when it yielded a valid date
+        if info.date:
+            work = work[:dm.start()] + ' ' + work[dm.end():]
 
     # Strip technical tags, collect them
     def _grab(m: re.Match) -> str:
@@ -224,6 +226,24 @@ _NOT_A_NAME = {
     "cd", "disc", "episode", "chapter", "clip", "video", "full", "complete",
     "extra", "bonus", "trailer", "preview",
 }
+
+
+def _build_date(year: str, first: str, second: str) -> str | None:
+    """Build YYYY-MM-DD from a year + two ambiguous parts (month/day).
+
+    Tries (first=month, second=day); if that month/day is impossible, swaps.
+    This corrects US MM-DD-YYYY filenames (e.g. 03-15-2024 → 2024-03-15)
+    and rejects genuinely invalid dates (month 13+, day 32+) instead of
+    emitting garbage like '2024-15-03'.
+    """
+    try:
+        y, a, b = int(year), int(first), int(second)
+    except (TypeError, ValueError):
+        return None
+    for month, day in ((a, b), (b, a)):
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            return f"{y:04d}-{month:02d}-{day:02d}"
+    return None
 
 
 def _is_noise_tag(value: str) -> bool:
