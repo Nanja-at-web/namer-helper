@@ -84,10 +84,13 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
         raw = res_m.group(1)
         info.resolution = "4K" if raw.upper() == "4K" else raw.lower()
 
-    # Extract @mention/@hashtag markers from the RAW stem — normalize must not run
+    # Extract @mention/#hashtag markers from the RAW stem — normalize must not run
     # first because it removes '#' as a noise char, breaking hashtag detection.
-    mentions = re.findall(r'@(\w[\w_]*)', stem)
-    hashtags = re.findall(r'#(\w[\w_]*)', stem)
+    # A marker only counts when it is NOT preceded by a letter/digit, so a '#'
+    # *inside* a word (e.g. a mangled studio "ATKG#lleria") is treated as noise,
+    # not as a performer tag.
+    mentions = re.findall(r'(?<![A-Za-z0-9])@(\w[\w_]*)', stem)
+    hashtags = re.findall(r'(?<![A-Za-z0-9])#(\w[\w_]*)', stem)
     if mentions:
         # Normalize the extracted studio value (resolves leet like @3v1l_4ng3l)
         raw_studio = mentions[0].replace('_', ' ')
@@ -100,7 +103,9 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
             for normalized in [_normalize(t.replace('_', ' ')).normalized]
             if not _is_noise_tag(normalized)
         ]
-    work = re.sub(r'[#@]\w[\w_]*', ' ', stem)
+    # Only strip real markers (preceded by a separator). A '#' inside a word
+    # stays so normalize() can clean it (ATKG#lleria -> ATKGlleria).
+    work = re.sub(r'(?<![A-Za-z0-9])[#@]\w[\w_]*', ' ', stem)
 
     # Normalize the remaining work string: leet, noise chars, unicode.
     # work has no video extension at this point, so normalize treats it as a stem.

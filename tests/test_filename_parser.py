@@ -131,6 +131,18 @@ class TestStructuralMarkers:
         info = parse_filename("Scene.Title.#jav.#Jane_Doe.#asian.mp4")
         assert info.performers == ["Jane Doe"]
 
+    def test_hash_inside_word_is_not_a_performer(self):
+        # Regression: a '#' INSIDE a word (mangled studio "ATKG#lleria") must
+        # NOT be read as a performer hashtag — and must not block the real
+        # performers in the first segment.
+        info = parse_filename(
+            "Alexa Grace and Blair Summers - lesbian - blonde - dildos - ATKG#lleria.mp4"
+        )
+        assert info.performers == ["Alexa Grace", "Blair Summers"]
+        assert "lleria" not in info.performers
+        # the mangled studio word survives (# removed by normalize)
+        assert "ATKGlleria" in info.cleaned
+
 
 # ── alias integration ─────────────────────────────────────────────────────────
 

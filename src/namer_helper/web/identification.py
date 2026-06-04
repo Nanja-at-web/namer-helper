@@ -56,6 +56,24 @@ def _performer_overlap(left: list[str] | None, right: list[str] | None) -> int:
     return matches
 
 
+def _filename_performer_conflict(parsed: dict | None, scene: dict | None) -> bool:
+    """True if the filename clearly names performers but the scene shares none.
+
+    The filename's own performers are the anchor to the actual file. Only
+    strong (multi-word) names count — tag-words like 'blonde' are ignored to
+    avoid false rejects. When the file names real people and a candidate scene
+    contains none of them, it is NOT the same scene, no matter how well two
+    databases agree with each other.
+    """
+    if not scene:
+        return False
+    parsed_perfs = (parsed or {}).get("performers") or []
+    strong = [p for p in parsed_perfs if len((p or "").split()) >= 2]
+    if not strong:
+        return False
+    return _performer_overlap(strong, scene.get("performers")) == 0
+
+
 def _scene_name(scene: dict) -> str:
     parts = [p for p in [scene.get("site") or scene.get("studio") or scene.get("network"), scene.get("date"), scene.get("title")] if p]
     name = " - ".join(parts)
@@ -151,6 +169,15 @@ def _cross_confirm(
 
     if stash_scene.get("date") and stash_scene.get("date") == tpdb_scene.get("date"):
         identity_signals.append("Datum bestätigt")
+
+    # File-anchor gate: if the filename clearly names performers and NEITHER
+    # candidate contains any of them, the two databases are only agreeing with
+    # each other (often via a circular title search), not with the file.
+    # Reject — this prevents matching a scene with entirely different people.
+    if (_filename_performer_conflict(parsed, tpdb_scene)
+            and _filename_performer_conflict(parsed, stash_scene)):
+        signals.append("Performer aus dem Dateinamen fehlen im Treffer")
+        return False, signals, duration_conflict
 
     signals.extend(identity_signals)
     return bool(identity_signals) and not duration_conflict, signals, duration_conflict
@@ -314,6 +341,18 @@ def build_identification(
                 signals=[duration_signal or "Dauerkonflikt"],
             ).to_dict()
         score = int(tpdb.get("score") or 0)
+        # File-anchor gate: filename names performers the candidate lacks →
+        # downgrade to manual review, never auto-rename a wrong-people match.
+        if _filename_performer_conflict(filename_parsed, tpdb):
+            return Identification(
+                status="possible",
+                confidence=0.35,
+                source="ThePornDB Kontextsuche",
+                reason="Performer aus dem Dateinamen fehlen im Treffer; unsicher",
+                suggested_name=None,
+                action="review",
+                signals=[f"TPDB Score {score}", "Performer-Konflikt mit Dateiname"],
+            ).to_dict()
         if score >= 80:
             status, confidence, action = "identified", 0.88, "rename"
         elif score >= 50:
@@ -343,6 +382,18 @@ def build_identification(
                 signals=[duration_signal or "Dauerkonflikt"],
             ).to_dict()
         via = sdb.get("match_via") or "context"
+        # File-anchor gate: drop confidence when the filename's performers are
+        # absent from the StashDB candidate.
+        if _filename_performer_conflict(filename_parsed, sdb):
+            return Identification(
+                status="possible",
+                confidence=0.32,
+                source=f"StashDB {via}",
+                reason="Performer aus dem Dateinamen fehlen im StashDB-Treffer; unsicher",
+                suggested_name=None,
+                action="review",
+                signals=[f"StashDB {via}", "Performer-Konflikt mit Dateiname"],
+            ).to_dict()
         confidence = 0.78 if via == "context" else 0.64
         return Identification(
             status="likely" if via == "context" else "possible",

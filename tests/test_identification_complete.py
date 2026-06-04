@@ -357,3 +357,79 @@ class TestActionConsistency:
         for r in review_cases:
             assert r["action"] == "review"
             assert r["confidence"] < 0.9
+
+
+class TestPerformerAnchorGate:
+    """Regression for the Alexa Grace/Blair Summers → Rosalinda false positive.
+
+    A candidate that shares NO performer with the filename's named performers
+    must never be 'identified' — no matter how well two databases agree.
+    """
+
+    def _wrong(self):
+        # Filename names Alexa Grace + Blair Summers; candidate is Rosalinda.
+        return dict(
+            original_name="Alexa Grace and Blair Summers - ATKG.mp4",
+            filename_parsed={"performers": ["Alexa Grace", "Blair Summers"]},
+            local_duration=1033,
+        )
+
+    def test_cross_confirm_rejected_on_performer_conflict(self):
+        scene = {"title": "Rosalinda Tries The Dildo Challenge",
+                 "performers": ["Rosalinda Blonde"], "date": "2026-02-22",
+                 "duration": 1033, "site": "Nebraska Coeds", "match_via": "context"}
+        r = _build(
+            stashdb_scenes=[scene], stashdb_suggested="N.mp4",
+            tpdb_scenes=[dict(scene, score=120, match_method="title")],
+            tpdb_suggested="N.mp4", **self._wrong())
+        assert r["status"] != "identified"
+        assert r["confidence"] < 0.9
+        assert r["action"] == "review"
+
+    def test_tpdb_context_rejected_on_performer_conflict(self):
+        scene = {"title": "Rosalinda Scene", "performers": ["Rosalinda Blonde"],
+                 "date": "2026-02-22", "duration": 1033, "site": "Nebraska Coeds",
+                 "match_method": "title", "score": 90}
+        r = _build(tpdb_scenes=[scene], tpdb_suggested="N.mp4", **self._wrong())
+        assert r["status"] == "possible"
+        assert r["action"] == "review"
+        assert r["suggested_name"] is None
+
+    def test_stashdb_context_rejected_on_performer_conflict(self):
+        scene = {"title": "Rosalinda Scene", "performers": ["Rosalinda Blonde"],
+                 "duration": 1033, "site": "Nebraska Coeds", "match_via": "context"}
+        r = _build(stashdb_scenes=[scene], stashdb_suggested="N.mp4", **self._wrong())
+        assert r["status"] == "possible"
+
+    def test_matching_performers_still_identified(self):
+        # Same shape, but candidate DOES contain a filename performer → keep it
+        scene = {"title": "Hot Scene", "performers": ["Alexa Grace", "Other"],
+                 "date": "2026-02-22", "duration": 1033, "site": "ATKGalleria",
+                 "match_via": "context"}
+        r = _build(
+            stashdb_scenes=[scene], stashdb_suggested="A.mp4",
+            tpdb_scenes=[dict(scene, score=120, match_method="title")],
+            tpdb_suggested="A.mp4", **self._wrong())
+        assert r["status"] == "identified"
+
+    def test_no_filename_performers_gate_inactive(self):
+        # Garbage/empty filename performers → gate must not fire (no anchor)
+        scene = {"title": "Some Scene", "performers": ["Rosalinda Blonde"],
+                 "date": "2026-02-22", "duration": 3600, "site": "X",
+                 "match_method": "title", "score": 90}
+        r = _build(tpdb_scenes=[scene], tpdb_suggested="S.mp4",
+                   original_name="x.mp4", filename_parsed={"performers": []},
+                   local_duration=3600)
+        # Without a filename anchor the gate is silent (falls back to score path)
+        assert r["status"] in ("identified", "likely", "possible")
+
+    def test_singleword_tagword_not_treated_as_performer(self):
+        # "blonde"/"brunette" are 1-word tag-words → must NOT anchor the gate
+        scene = {"title": "Scene", "performers": ["Rosalinda Blonde"],
+                 "duration": 3600, "site": "X", "match_method": "title", "score": 90}
+        r = _build(tpdb_scenes=[scene], tpdb_suggested="S.mp4",
+                   original_name="x.mp4",
+                   filename_parsed={"performers": ["blonde", "brunette"]},
+                   local_duration=3600)
+        # 1-word names don't count as strong → gate inactive, normal scoring
+        assert "Performer-Konflikt" not in " ".join(r.get("signals", []))
