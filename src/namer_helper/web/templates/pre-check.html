@@ -5,9 +5,17 @@
 
 {% set active_wf = 'dateien' %}{% include "workflow_tabs.html" %}
 
+{% if total > shown %}
+<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3 mb-4">
+  ⚠ Sehr viele Dateien — es werden nur die ersten <b>{{ shown }}</b> von
+  <b>{{ total }}</b> angezeigt. Nutze „Alle scannen" für die Stapel-Verarbeitung
+  und die <a href="/queue" class="underline">Queue</a> zum Bestätigen.
+</div>
+{% endif %}
+
 <div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-3">
-    <span class="text-gray-500 text-sm">{{ files | length }} Dateien</span>
+    <span class="text-gray-500 text-sm">{{ total }} Dateien</span>
   </div>
   {% if files %}
   <div class="flex gap-2">
@@ -1264,8 +1272,9 @@ async function loadDurations() {
       row.dataset.durationLoaded = '0';
       if (cell) cell.textContent = '—';
     }
-    applyFilterSort();
   }
+  // Sort once at the end, not after every fetch (was O(n²) → froze the page)
+  applyFilterSort();
 }
 
 // Init counter on load

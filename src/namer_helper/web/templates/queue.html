@@ -54,8 +54,14 @@
 
 <!-- Needs review -->
 <h2 class="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-2">
-  ⚠ Braucht Entscheidung ({{ needs_review|length }})
+  ⚠ Braucht Entscheidung ({{ needs_review_total }})
 </h2>
+{% if needs_review_total > needs_review|length %}
+<div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded p-2 mb-2">
+  Es werden die ersten <b>{{ needs_review|length }}</b> von <b>{{ needs_review_total }}</b>
+  Review-Fällen angezeigt. Arbeite sie ab oder nutze die Stapel-Buttons oben.
+</div>
+{% endif %}
 {% if needs_review %}
 <div class="bg-white rounded-lg shadow divide-y mb-8">
   {% for item in needs_review %}

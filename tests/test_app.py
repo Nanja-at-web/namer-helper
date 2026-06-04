@@ -622,3 +622,46 @@ class TestSettings:
         if cfg_file.exists():
             saved = json.loads(cfg_file.read_text())
             assert saved.get("ollama_url") == "http://test:11434"
+
+
+class TestLargeListCapping:
+    """Pages must cap rendered rows so huge libraries don't crash the browser."""
+
+    def _make_app(self, tmp_path, n_failed=0, n_pre=0):
+        import json as _json
+        failed = tmp_path / "failed"; failed.mkdir()
+        pre = tmp_path / "pre"; pre.mkdir()
+        for i in range(n_failed):
+            (failed / f"f{i}.mp4").write_bytes(b"x" * 1100)
+        for i in range(n_pre):
+            (pre / f"p{i}.mp4").write_bytes(b"x" * 1100)
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text(f"[watchdog]\nfailed_dir={failed}\nwatch_dir={tmp_path}/w\n"
+                       f"work_dir={tmp_path}/wk\ndest_dir={tmp_path}/d\n")
+        reports = tmp_path / "reports"; reports.mkdir()
+        config = tmp_path / "config"; config.mkdir()
+        (config / "ai_config.json").write_text(_json.dumps({
+            "pre_check_dir": str(pre), "ollama_url": "", "ollama_model": "llama3",
+            "stashdb_api_key": "", "theporndb_api_key": ""}))
+        return create_app(cfg, reports, config)
+
+    def test_failed_caps_rows(self, tmp_path):
+        from namer_helper.web.app import _MAX_LIST_ROWS
+        app = self._make_app(tmp_path, n_failed=_MAX_LIST_ROWS + 50)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                html = c.get("/failed").text
+        # Rendered rows are capped; the true total is shown in the banner
+        assert html.count('onclick="confirmMove') <= _MAX_LIST_ROWS
+        assert f"{_MAX_LIST_ROWS + 50}" in html  # true total visible
+
+    def test_precheck_caps_rows(self, tmp_path):
+        from namer_helper.web.app import _MAX_LIST_ROWS
+        app = self._make_app(tmp_path, n_pre=_MAX_LIST_ROWS + 50)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                html = c.get("/pre-check").text
+        assert "nur die ersten" in html
+        assert f"{_MAX_LIST_ROWS + 50}" in html

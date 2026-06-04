@@ -36,6 +36,9 @@ _SERVICE = "namer-watchdog"
 _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
+# Max rows rendered into a single HTML page. Tens of thousands of rows crash
+# the browser; the server still knows the true total and shows it.
+_MAX_LIST_ROWS = 500
 _SINGLE_LOOKUP_TIMEOUT_SECONDS = 600   # keep browser lookup aligned with server-scan per-file timeout
 _NON_TEXT_OLLAMA_MODELS = ("all-minilm", "mxbai-embed", "nomic-embed", "moondream")
 _NAMER_TEMPLATE_RE = re.compile(r"\{([^{}]+)\}")
@@ -545,8 +548,11 @@ def create_app(
             failed_dir = paths["failed_dir"]
         except Exception:
             failed_dir = Path("/var/lib/namer/failed")
+        all_files = _list_failed_files(failed_dir)
         return templates.TemplateResponse(request, "failed.html", {
-            "files": _list_failed_files(failed_dir),
+            "files": all_files[:_MAX_LIST_ROWS],
+            "total": len(all_files),
+            "shown": min(len(all_files), _MAX_LIST_ROWS),
             "retry_time": _read_cfg_value(namer_config, "retry_time"),
         })
 
@@ -1051,8 +1057,11 @@ def create_app(
     @app.get("/pre-check", response_class=HTMLResponse)
     async def pre_check_list(request: Request):
         pre_dir = _get_pre_check_dir()
+        all_files = _list_pre_check_files(pre_dir)
         return templates.TemplateResponse(request, "pre-check.html", {
-            "files": _list_pre_check_files(pre_dir),
+            "files": all_files[:_MAX_LIST_ROWS],
+            "total": len(all_files),
+            "shown": min(len(all_files), _MAX_LIST_ROWS),
             "dir_exists": pre_dir.exists(),
             "pre_check_dir": str(pre_dir),
         })
@@ -2093,19 +2102,24 @@ def create_app(
         from namer_helper import queue as review_queue
         items = review_queue.load_queue(_queue_path())
         ordered = review_queue.sort_for_review(items)
-        needs_review = [i.to_dict() for i in ordered if i.status == review_queue.PENDING and not review_queue.is_batch_eligible(i)]
-        deferred = [i.to_dict() for i in ordered if i.status == review_queue.DEFERRED]
-        # Batch-eligible split by deterministic source (fingerprint/jav/rule)
+        needs_review_all = [i for i in ordered if i.status == review_queue.PENDING and not review_queue.is_batch_eligible(i)]
+        deferred_all = [i for i in ordered if i.status == review_queue.DEFERRED]
+        needs_review = [i.to_dict() for i in needs_review_all[:_MAX_LIST_ROWS]]
+        deferred = [i.to_dict() for i in deferred_all[:_MAX_LIST_ROWS]]
+        # Batch-eligible split by deterministic source — each list capped for render
+        # (the batch-confirm buttons act on the FULL queue server-side, not these rows)
         by_cat = review_queue.batch_eligible_by_category(items)
         eligible_groups = {
-            cat: [i.to_dict() for i in sorted(by_cat[cat], key=lambda x: -x.confidence)]
+            cat: [i.to_dict() for i in sorted(by_cat[cat], key=lambda x: -x.confidence)[:_MAX_LIST_ROWS]]
             for cat in review_queue.ELIGIBLE_CATEGORIES
         }
         return templates.TemplateResponse(request, "queue.html", {
             "summary": review_queue.summary(items),
             "needs_review": needs_review,
+            "needs_review_total": len(needs_review_all),
             "eligible_groups": eligible_groups,
             "deferred": deferred,
+            "max_rows": _MAX_LIST_ROWS,
         })
 
     @app.get("/pre-check/queue")
