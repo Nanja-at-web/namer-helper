@@ -323,6 +323,59 @@ class TestQueueRoutes:
         assert r.json()["removed"] == 1
 
 
+class TestEligibleCategories:
+    """Batch-eligible split by source: fingerprint / jav / rule."""
+
+    def test_categorisation(self):
+        def it(src):
+            return q.QueueItem(name="f", status=q.PENDING, confidence=0.96,
+                               source=src, action="rename")
+        assert q.eligible_category(it("StashDB Fingerprint")) == "fingerprint"
+        assert q.eligible_category(it("ThePornDB Fingerprint")) == "fingerprint"
+        assert q.eligible_category(it("ThePornDB JAV-Code")) == "jav"
+        assert q.eligible_category(it("Rule (user_confirmed)")) == "rule"
+
+    def test_group_counts(self, tmp_path):
+        p = tmp_path / "q.json"
+        q.enqueue(p, name="a.mp4", identification=_ident(source="StashDB Fingerprint", confidence=0.97))
+        q.enqueue(p, name="b.mp4", identification=_ident(source="ThePornDB JAV-Code", confidence=0.94))
+        q.enqueue(p, name="c.mp4", identification=_ident(source="Rule (x)", confidence=1.0))
+        q.enqueue(p, name="d.mp4", identification=_ident(status="likely", confidence=0.76,
+                  source="ThePornDB Kontextsuche", action="review"))
+        groups = q.batch_eligible_by_category(q.load_queue(p))
+        assert len(groups["fingerprint"]) == 1
+        assert len(groups["jav"]) == 1
+        assert len(groups["rule"]) == 1
+
+    def test_summary_has_category_counts(self, tmp_path):
+        p = tmp_path / "q.json"
+        q.enqueue(p, name="a.mp4", identification=_ident(source="StashDB Fingerprint", confidence=0.97))
+        q.enqueue(p, name="b.mp4", identification=_ident(source="ThePornDB JAV-Code", confidence=0.94))
+        s = q.summary(q.load_queue(p))
+        assert s["eligible_fingerprint"] == 1
+        assert s["eligible_jav"] == 1
+        assert s["eligible_rule"] == 0
+
+    def test_confirm_batch_source_filter(self, client, dirs):
+        qpath = dirs["config"] / "review-queue.json"
+        for n, src in (("fp.mp4", "StashDB Fingerprint"), ("jav.mp4", "ThePornDB JAV-Code")):
+            (dirs["pre"] / n).write_bytes(b"\x00" * 1000)
+            q.enqueue(qpath, name=n, identification=_ident(source=src, confidence=0.96, suggested=n))
+        # Confirm only fingerprint → jav stays
+        r = client.post("/pre-check/queue/confirm-batch", params={"source": "fingerprint"}).json()
+        assert r["confirmed"] == 1 and r["eligible"] == 1
+        assert (dirs["watch"] / "fp.mp4").exists()
+        assert (dirs["pre"] / "jav.mp4").exists()       # jav untouched
+
+    def test_confirm_batch_no_source_confirms_all(self, client, dirs):
+        qpath = dirs["config"] / "review-queue.json"
+        for n, src in (("fp.mp4", "StashDB Fingerprint"), ("jav.mp4", "ThePornDB JAV-Code")):
+            (dirs["pre"] / n).write_bytes(b"\x00" * 1000)
+            q.enqueue(qpath, name=n, identification=_ident(source=src, confidence=0.96, suggested=n))
+        r = client.post("/pre-check/queue/confirm-batch").json()
+        assert r["confirmed"] == 2
+
+
 class TestUnifiedVerbs:
     """Pre-Check and Queue routes share one verb layer — same side-effects."""
 
@@ -432,8 +485,8 @@ class TestQueuePage:
         assert r.status_code == 200
         assert "fp.mp4" in r.text
         assert "ctx.mp4" in r.text
-        # batch button reflects the one eligible item
-        assert "Alle 1 stapelbaren" in r.text
+        # per-source batch button reflects the one fingerprint-eligible item
+        assert "Alle 1 Fingerprint" in r.text
 
     def test_queue_page_in_nav(self, client):
         r = client.get("/queue")

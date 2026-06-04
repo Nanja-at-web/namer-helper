@@ -2094,12 +2094,17 @@ def create_app(
         items = review_queue.load_queue(_queue_path())
         ordered = review_queue.sort_for_review(items)
         needs_review = [i.to_dict() for i in ordered if i.status == review_queue.PENDING and not review_queue.is_batch_eligible(i)]
-        eligible = [i.to_dict() for i in ordered if review_queue.is_batch_eligible(i)]
         deferred = [i.to_dict() for i in ordered if i.status == review_queue.DEFERRED]
+        # Batch-eligible split by deterministic source (fingerprint/jav/rule)
+        by_cat = review_queue.batch_eligible_by_category(items)
+        eligible_groups = {
+            cat: [i.to_dict() for i in sorted(by_cat[cat], key=lambda x: -x.confidence)]
+            for cat in review_queue.ELIGIBLE_CATEGORIES
+        }
         return templates.TemplateResponse(request, "queue.html", {
             "summary": review_queue.summary(items),
             "needs_review": needs_review,
-            "eligible": eligible,
+            "eligible_groups": eligible_groups,
             "deferred": deferred,
         })
 
@@ -2119,11 +2124,14 @@ def create_app(
         return {"ok": ok, "error": error}
 
     @app.post("/pre-check/queue/confirm-batch")
-    async def pre_check_queue_confirm_batch():
-        """Confirm every batch-eligible item: deterministic matches only."""
+    async def pre_check_queue_confirm_batch(source: str = ""):
+        """Confirm batch-eligible items. Optional source = fingerprint|jav|rule
+        confirms only that category (sonst alle deterministischen)."""
         from namer_helper import queue as review_queue
         items = review_queue.load_queue(_queue_path())
         eligible = review_queue.batch_eligible(items)
+        if source in review_queue.ELIGIBLE_CATEGORIES:
+            eligible = [i for i in eligible if review_queue.eligible_category(i) == source]
         confirmed, failed = 0, []
         for item in eligible:
             ok, error = _act_confirm(item.name)

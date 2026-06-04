@@ -20,18 +20,36 @@
 
 <div id="msg" class="hidden mb-4 text-sm rounded p-2"></div>
 
-<!-- Batch action -->
-<div class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center gap-3">
-  <button onclick="confirmBatch()"
-    class="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded font-medium {% if summary.batch_eligible == 0 %}opacity-40 cursor-not-allowed{% endif %}"
-    {% if summary.batch_eligible == 0 %}disabled{% endif %}>
-    ✓ Alle {{ summary.batch_eligible }} stapelbaren bestätigen → watch/
-  </button>
-  <span class="text-xs text-gray-500">nur deterministische Treffer (Fingerprint · JAV-Code · Rule, ≥ 0.94)</span>
-  <button onclick="clearResolved()"
-    class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded">
-    Liste aufräumen
-  </button>
+<!-- Batch action — split by source reliability -->
+<div class="bg-white rounded-lg shadow p-4 mb-6">
+  <div class="text-xs text-gray-500 mb-3">
+    Stapel-Bestätigung nach Quelle. Höhere Sicherheit zuerst — alle → watch/, Namer verifiziert nochmal.
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <button onclick="confirmBatch('fingerprint')"
+      class="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded font-medium {% if summary.eligible_fingerprint == 0 %}opacity-40 cursor-not-allowed{% endif %}"
+      {% if summary.eligible_fingerprint == 0 %}disabled{% endif %}>
+      🔒 Alle {{ summary.eligible_fingerprint }} Fingerprint → watch/
+    </button>
+    <button onclick="confirmBatch('jav')"
+      class="bg-teal-600 hover:bg-teal-700 text-white text-sm px-4 py-2 rounded font-medium {% if summary.eligible_jav == 0 %}opacity-40 cursor-not-allowed{% endif %}"
+      {% if summary.eligible_jav == 0 %}disabled{% endif %}>
+      🎬 Alle {{ summary.eligible_jav }} JAV-Code → watch/
+    </button>
+    <button onclick="confirmBatch('rule')"
+      class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded font-medium {% if summary.eligible_rule == 0 %}opacity-40 cursor-not-allowed{% endif %}"
+      {% if summary.eligible_rule == 0 %}disabled{% endif %}>
+      📋 Alle {{ summary.eligible_rule }} Rule → watch/
+    </button>
+    <button onclick="clearResolved()"
+      class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded">
+      Liste aufräumen
+    </button>
+  </div>
+  <div class="text-xs text-gray-400 mt-2">
+    🔒 Fingerprint = oshash/phash, praktisch 100 % · 🎬 JAV = Code aus Dateiname, sehr hoch ·
+    📋 Rule = von dir bestätigt
+  </div>
 </div>
 
 <!-- Needs review -->
@@ -69,14 +87,21 @@
 <div class="text-sm text-gray-400 mb-8">Keine offenen Review-Fälle. 🎉</div>
 {% endif %}
 
-<!-- Batch eligible -->
-<details class="mb-8" {% if needs_review %}{% else %}open{% endif %}>
-  <summary class="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2 cursor-pointer">
-    ✓ Stapelbar — deterministisch ({{ eligible|length }})
+<!-- Batch eligible — grouped by source reliability -->
+{% set cat_meta = {
+  'fingerprint': ('🔒 Fingerprint — oshash/phash (praktisch 100 %)', 'text-green-700'),
+  'jav':         ('🎬 JAV-Code — aus Dateiname (sehr hoch)', 'text-teal-700'),
+  'rule':        ('📋 Rule — von dir bestätigt', 'text-indigo-700')
+} %}
+{% for cat in ['fingerprint','jav','rule'] %}
+{% set group = eligible_groups[cat] %}
+{% if group %}
+<details class="mb-6" {% if cat == 'fingerprint' and not needs_review %}open{% endif %}>
+  <summary class="text-sm font-semibold {{ cat_meta[cat][1] }} uppercase tracking-wide mb-2 cursor-pointer">
+    {{ cat_meta[cat][0] }} ({{ group|length }})
   </summary>
-  {% if eligible %}
   <div class="bg-white rounded-lg shadow divide-y mt-2">
-    {% for item in eligible %}
+    {% for item in group %}
     <div id="q-{{ item.name|urlencode }}" class="p-3 flex items-center justify-between gap-4">
       <div class="min-w-0">
         <span class="font-mono text-sm text-gray-800">{{ item.name }}</span>
@@ -91,10 +116,12 @@
     </div>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="text-sm text-gray-400 mt-2">Keine stapelbaren Treffer.</div>
-  {% endif %}
 </details>
+{% endif %}
+{% endfor %}
+{% if summary.batch_eligible == 0 %}
+<div class="text-sm text-gray-400 mb-8">Keine stapelbaren Treffer.</div>
+{% endif %}
 
 <!-- Deferred -->
 {% if deferred %}
@@ -139,12 +166,15 @@ async function act(action, encodedName) {
   }
 }
 
-async function confirmBatch() {
-  if (!confirm('Alle stapelbaren (deterministischen) Treffer bestätigen und nach watch/ senden?')) return;
-  const res = await fetch('/pre-check/queue/confirm-batch', {method: 'POST'});
+async function confirmBatch(source) {
+  const labels = {fingerprint: 'Fingerprint', jav: 'JAV-Code', rule: 'Rule'};
+  const label = labels[source] || 'stapelbaren';
+  if (!confirm('Alle ' + label + '-Treffer bestätigen und nach watch/ senden?\n' +
+              'Namer verifiziert jede Datei nochmal — Fehltreffer landen in failed/, nie ein Falschname.')) return;
+  const res = await fetch('/pre-check/queue/confirm-batch?source=' + source, {method: 'POST'});
   const json = await res.json().catch(() => ({ok: false}));
   if (json.ok) {
-    showMsg('✓ ' + json.confirmed + ' von ' + json.eligible + ' bestätigt → watch/.', true);
+    showMsg('✓ ' + json.confirmed + ' von ' + json.eligible + ' ' + label + '-Treffern bestätigt → watch/.', true);
     setTimeout(() => location.reload(), 1200);
   } else {
     showMsg('✗ Stapel-Bestätigung fehlgeschlagen', false);

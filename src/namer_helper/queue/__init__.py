@@ -196,6 +196,35 @@ def batch_eligible(items: list[QueueItem]) -> list[QueueItem]:
     return [i for i in items if is_batch_eligible(i)]
 
 
+# Eligible-source categories, in descending reliability order.
+ELIGIBLE_CATEGORIES = ("fingerprint", "jav", "rule")
+
+
+def eligible_category(item: QueueItem) -> str:
+    """Classify a batch-eligible item by its deterministic source.
+
+    fingerprint = oshash/phash match (essentially certain)
+    jav         = TPDB JAV-code match (high, but filename-derived)
+    rule        = previously user-confirmed (certain by definition)
+    """
+    s = item.source or ""
+    if "Rule" in s:
+        return "rule"
+    if "JAV-Code" in s:
+        return "jav"
+    if "Fingerprint" in s:
+        return "fingerprint"
+    return "fingerprint"  # any other deterministic marker → safest bucket
+
+
+def batch_eligible_by_category(items: list[QueueItem]) -> dict[str, list[QueueItem]]:
+    """Group batch-eligible items into fingerprint / jav / rule buckets."""
+    out: dict[str, list[QueueItem]] = {c: [] for c in ELIGIBLE_CATEGORIES}
+    for item in batch_eligible(items):
+        out[eligible_category(item)].append(item)
+    return out
+
+
 def _sort_key(item: QueueItem) -> tuple:
     # Order: pending-review (needs human) -> pending batch-eligible ->
     #        deferred -> resolved. Within a group, highest confidence first.
@@ -217,10 +246,14 @@ def sort_for_review(items: list[QueueItem]) -> list[QueueItem]:
 
 def summary(items: list[QueueItem]) -> dict:
     """Counts for the dashboard."""
+    by_cat = batch_eligible_by_category(items)
     return {
         "total": len(items),
         "pending": sum(1 for i in items if i.status == PENDING),
         "batch_eligible": len(batch_eligible(items)),
+        "eligible_fingerprint": len(by_cat["fingerprint"]),
+        "eligible_jav": len(by_cat["jav"]),
+        "eligible_rule": len(by_cat["rule"]),
         "needs_review": sum(
             1 for i in items if i.status == PENDING and not is_batch_eligible(i)
         ),
