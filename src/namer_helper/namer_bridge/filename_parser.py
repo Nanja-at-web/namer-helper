@@ -138,11 +138,25 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     work = work.strip(' -–—')
 
     def _looks_like_performers(text: str) -> list[str]:
-        """Return names if text looks like a comma/&/and-separated performer list."""
-        parts = [n.strip() for n in re.split(r',|&|\band\b', text, flags=re.IGNORECASE) if n.strip()]
-        if parts and all(1 <= len(n.split()) <= 3 and n[0].isupper() for n in parts):
-            return parts
-        return []
+        """Return names if text looks like a comma/&/+/and-separated performer list.
+
+        A part qualifies as a name when it is 1-3 capitalised words. A SINGLE
+        word that is a known structural/tag word (Studio, Title, Scene, blonde…)
+        disqualifies the whole list — that prevents 'Studio'/'Title' segments
+        from being misread as performers.
+        """
+        parts = [n.strip() for n in re.split(r',|&|\+|\band\b', text, flags=re.IGNORECASE) if n.strip()]
+        if not parts:
+            return []
+        for n in parts:
+            words = n.split()
+            if not (1 <= len(words) <= 3 and n[0].isupper()):
+                return []
+            if len(words) == 1:
+                low = re.sub(r"[^a-z0-9]+", "", n.lower())
+                if low in _NOISE_TAGS or low in _NOT_A_NAME:
+                    return []
+        return parts
 
     # " - " segmented structure: Studio - Performers - Title
     for sep in (' - ', ' – ', ' — '):
@@ -204,6 +218,16 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
     return info
 
 
+# Single words that are structural, never performer names.
+_NOT_A_NAME = {
+    "studio", "title", "scene", "part", "movie", "film", "vol", "volume",
+    "cd", "disc", "episode", "chapter", "clip", "video", "full", "complete",
+    "extra", "bonus", "trailer", "preview",
+}
+
+
 def _is_noise_tag(value: str) -> bool:
     key = re.sub(r"[^a-z0-9]+", "", value.lower())
+    if not key or key.isdigit() or len(key) < 2:
+        return True  # empty, pure-number (#1, #3) or single char → never a name
     return key in _NOISE_TAGS

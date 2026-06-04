@@ -131,6 +131,29 @@ class TestStructuralMarkers:
         info = parse_filename("Scene.Title.#jav.#Jane_Doe.#asian.mp4")
         assert info.performers == ["Jane Doe"]
 
+    def test_comma_separated_performers_not_studio(self):
+        # "A, B - Studio - Title": comma list must be performers, not studio
+        info = parse_filename("Alexa Grace, Blair Summers - Studio - Title.mp4")
+        assert info.performers == ["Alexa Grace", "Blair Summers"]
+        assert info.studio != "Alexa Grace, Blair Summers"
+
+    def test_numeric_hashtag_not_performer(self):
+        # "#1" is a number, never a performer name
+        info = parse_filename("Studio - Title #1 - Jane Doe.mp4")
+        assert "1" not in info.performers
+        assert info.performers == [] or all(not p.isdigit() for p in info.performers)
+
+    def test_plus_separated_performers(self):
+        info = parse_filename("Brazzers - Jane Doe + John Smith - Scene.mp4")
+        assert "Jane Doe" in info.performers
+        assert "John Smith" in info.performers
+
+    def test_structural_word_not_performer(self):
+        # A bare "Studio"/"Title" segment must not become a performer
+        info = parse_filename("Studio - Title - Jane Doe.mp4")
+        assert "Title" not in info.performers
+        assert "Studio" not in info.performers
+
     def test_hash_inside_word_is_not_a_performer(self):
         # Regression: a '#' INSIDE a word (mangled studio "ATKG#lleria") must
         # NOT be read as a performer hashtag — and must not block the real
