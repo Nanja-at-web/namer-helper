@@ -387,6 +387,52 @@ def generate_training_cmd(rules_path: str, output_path: str, variants: int, seed
     logger.success(f"Trainingsbeispiele geschrieben: {count} -> {output_path}")
 
 
+@main.command("import-vocabulary")
+@click.option(
+    "--from", "source",
+    type=click.Choice(["stash", "stashdb", "tpdb"]),
+    required=True,
+    help="Quelle: lokale StashApp / StashDB cloud / ThePornDB",
+)
+@click.option("--config-dir", default="/etc/namer-helper", show_default=True,
+              help="Verzeichnis für known_*.json + ai_config.json")
+@click.option("--stash-url", default="http://localhost:9999", show_default=True,
+              help="StashApp-URL (nur bei --from stash)")
+@click.option("--stash-api-key", default="", help="StashApp API-Key (falls gesetzt)")
+@click.option("--stashdb-key", default="", help="StashDB API-Key (sonst aus ai_config.json)")
+@click.option("--tpdb-key", default="", help="ThePornDB API-Key (sonst aus ai_config.json)")
+def import_vocabulary_cmd(source, config_dir, stash_url, stash_api_key, stashdb_key, tpdb_key):
+    """Studio-/Performer-Wortschatz vorab aus einer Quelle befüllen (Option 2)."""
+    from namer_helper import vocab_import
+    from namer_helper.web.ai_config import load_ai_config
+
+    cd = Path(config_dir)
+    ai = load_ai_config(cd)
+    stashdb_key = stashdb_key or ai.stashdb_api_key
+    tpdb_key = tpdb_key or ai.theporndb_api_key
+
+    def prog(msg: str) -> None:
+        logger.info(msg)
+
+    logger.info(f"Import aus '{source}' → {cd}")
+    if source == "stash":
+        res = vocab_import.import_from_stash(cd, url=stash_url, api_key=stash_api_key, progress=prog)
+    elif source == "stashdb":
+        res = vocab_import.import_from_stashdb(cd, api_key=stashdb_key, progress=prog)
+    else:
+        res = vocab_import.import_from_tpdb(cd, api_key=tpdb_key, progress=prog)
+
+    if res["error"]:
+        logger.error(
+            f"Abbruch: {res['error']} "
+            f"(bis dahin +{res['studios']} Studios, +{res['performers']} Performer gelernt)"
+        )
+        raise click.Abort()
+    logger.success(
+        f"Fertig: +{res['studios']} Studios, +{res['performers']} Performer in den Wortschatz."
+    )
+
+
 @main.command("stash-search")
 @click.argument("filenames", nargs=-1, required=False)
 @click.option(
