@@ -169,3 +169,25 @@ class TestDetectAll:
     def test_detect_all_includes_loose_codes(self):
         codes = detect_all("FAA 225 title ABP123.mp4")
         assert [c.code for c in codes] == ["FAA-225", "ABP-123"]
+
+
+class TestReleaseTagsNotJav:
+    """Release/codec tags that look like codes must not be treated as JAV."""
+
+    def test_webdl_not_jav(self):
+        assert detect("5K Porn - White Hot [WEBDL-1012].mp4") is None
+
+    def test_codec_tags_not_jav(self):
+        assert detect("Scene X264-1080.mp4") is None
+        assert detect("Movie HDTV-720.mp4") is None
+        assert detect("Title HEVC-265.mp4") is None
+
+    def test_real_jav_still_detected(self):
+        assert detect("ABP-123.mp4").code == "ABP-123"
+        assert detect("SSIS-698.mp4").code == "SSIS-698"
+
+    def test_detect_all_skips_release_tags(self):
+        # ABP-123 is real, WEBDL-1012 is a release tag → only ABP-123
+        codes = [c.code for c in detect_all("ABP-123 [WEBDL-1012].mp4")]
+        assert "ABP-123" in codes
+        assert "WEBDL-1012" not in codes

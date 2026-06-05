@@ -28,6 +28,15 @@ _JAV_LOOSE_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2,4})[ ._-]?(\d{2,4})(?![A-Z0-9
 # FC2-PPV: distinct structure — letter prefix followed by 6-8 digit number.
 _FC2_RE = re.compile(r"\b(FC2-PPV-\d{6,8})\b", re.IGNORECASE)
 
+# Release/quality/codec tags that look like a JAV code but are NOT one.
+# e.g. "WEBDL-1012", "X264-GROUP" — must not be treated as a studio code.
+_NOT_JAV_PREFIXES = {
+    "WEBDL", "WEBRIP", "WEB", "BDRIP", "BRRIP", "HDRIP", "DVDRIP", "DVD",
+    "HDTV", "BLURAY", "BLU", "XVID", "DIVX", "X264", "X265", "H264", "H265",
+    "HEVC", "AVC", "AAC", "AC3", "DTS", "MP3", "FLAC", "HDR", "SDR", "UHD",
+    "REPACK", "PROPER", "RERIP", "VR", "POV", "SD", "HD", "FHD",
+}
+
 
 @dataclass
 class JavCode:
@@ -35,6 +44,11 @@ class JavCode:
     studio: str     # letter prefix — "ABP" or "FC2"
     number: str     # digit suffix — "123" or "1234567"
     is_fc2: bool = False
+
+
+def _is_release_tag(studio: str) -> bool:
+    """True if the letter prefix is a known release/codec tag, not a JAV studio."""
+    return studio.upper() in _NOT_JAV_PREFIXES
 
 
 def detect(filename: str) -> JavCode | None:
@@ -49,18 +63,19 @@ def detect(filename: str) -> JavCode | None:
         parts = code.split("-")
         return JavCode(code=code, studio="FC2", number=parts[-1], is_fc2=True)
 
-    m = _JAV_RE.search(filename)
-    if m:
+    for m in _JAV_RE.finditer(filename):
         code = m.group(1).upper()
         studio, number = code.split("-", 1)
+        if _is_release_tag(studio):
+            continue  # WEBDL-1012, X264-… etc. are not JAV codes
         return JavCode(code=code, studio=studio, number=number)
 
-    m = _JAV_LOOSE_RE.search(filename)
-    if m:
+    for m in _JAV_LOOSE_RE.finditer(filename):
         studio = m.group(1).upper()
         number = m.group(2)
+        if _is_release_tag(studio):
+            continue
         return JavCode(code=f"{studio}-{number}", studio=studio, number=number)
-
     return None
 
 
@@ -80,16 +95,16 @@ def detect_all(filename: str) -> list[JavCode]:
 
     for m in _JAV_RE.finditer(filename):
         code = m.group(1).upper()
-        if code not in seen:
+        studio, number = code.split("-", 1)
+        if code not in seen and not _is_release_tag(studio):
             seen.add(code)
-            studio, number = code.split("-", 1)
             entries.append((m.start(), JavCode(code=code, studio=studio, number=number)))
 
     for m in _JAV_LOOSE_RE.finditer(filename):
         studio = m.group(1).upper()
         number = m.group(2)
         code = f"{studio}-{number}"
-        if code not in seen:
+        if code not in seen and not _is_release_tag(studio):
             seen.add(code)
             entries.append((m.start(), JavCode(code=code, studio=studio, number=number)))
 

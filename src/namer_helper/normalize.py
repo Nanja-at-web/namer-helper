@@ -46,7 +46,8 @@ LEET_MAP: dict[str, str] = {
 # episode markers (S01E05), and pure numbers (years, chapter numbers, …).
 _TECH_TOKEN_RE = re.compile(
     r"^(?:"
-    r"4[Kk]|2160[piP]?|1080[piP]?|720[piP]?|480[piP]?|360[piP]?"
+    r"\d{1,2}[Kk]"  # resolution shorthand: 4K, 5K, 8K — must not become sK etc.
+    r"|2160[piP]?|1080[piP]?|720[piP]?|480[piP]?|360[piP]?"
     r"|[Xx]26[45]|[Hh]26[45]|xvid|HEVC|AVC"
     r"|WEB-?DL|WEBRip|BluRay|Blu-Ray|HDTV|DVDRip|BDRip|BRRip|WEB"
     r"|AAC[\d.]*|AC3|DTS[\w-]*|MP3|FLAC"

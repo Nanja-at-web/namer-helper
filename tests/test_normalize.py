@@ -250,3 +250,17 @@ class TestNormalize:
                 # The leet char is at position 0 (boundary), right neighbour 'a' is alpha
                 assert detected, f"Expected leet detection for '{digit}' → '{letter}'"
                 assert tok[0] == letter, f"Expected '{letter}' for '{digit}' in '{digit}a'"
+
+
+class TestResolutionShorthandProtected:
+    """5K/8K resolution shorthand must survive leet (5 → s would break studios)."""
+
+    def test_5k_not_leeted(self):
+        assert _leet_token("5K") == ("5K", False)
+        assert _leet_token("8K") == ("8K", False)
+
+    def test_5k_in_studio_name(self):
+        # "5K Porn" must stay "5K Porn", not become "sK Porn"
+        r = normalize("5K Porn - White Hot")
+        assert "5K Porn" in r.normalized
+        assert "sK" not in r.normalized
