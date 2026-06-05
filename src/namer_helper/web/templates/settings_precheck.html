@@ -64,9 +64,13 @@
       class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-4 py-2 rounded">Aus StashDB</button>
     <button onclick="importVocab('tpdb')" id="vb-tpdb"
       class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded">Aus ThePornDB</button>
+    <button onclick="stopImport()" id="vb-stop"
+      class="hidden bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-sm px-4 py-2 rounded">⏹ Stop</button>
   </div>
+  <div id="vocab-progress" class="hidden mt-2 text-sm text-gray-600"></div>
   <p class="text-xs text-gray-400 mt-2">
-    Cloud-Quellen (StashDB/ThePornDB) können je nach Größe etwas dauern — bitte warten, nicht mehrfach klicken.
+    Läuft im Hintergrund. Cloud-Quellen (besonders ThePornDB mit zehntausenden
+    Performern) können lange dauern — du kannst jederzeit stoppen, der Fortschritt bleibt erhalten.
   </p>
 </div>
 
@@ -102,32 +106,63 @@ async function loadVocabStats() {
   } catch (e) {}
 }
 
+let vocabPoll = null;
+
+function setImportRunning(running) {
+  ['vb-stash','vb-stashdb','vb-tpdb'].forEach(id => {
+    const b = document.getElementById(id);
+    b.disabled = running; b.classList.toggle('opacity-50', running);
+  });
+  document.getElementById('vb-stop').classList.toggle('hidden', !running);
+  document.getElementById('vocab-progress').classList.toggle('hidden', !running);
+}
+
 async function importVocab(source) {
-  // Save the stash URL first so "stash" uses the current field value
   if (source === 'stash') {
     await fetch('/settings', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({stash_url: document.getElementById('s-stash-url').value.trim()})});
   }
-  const btns = ['vb-stash','vb-stashdb','vb-tpdb'].map(id => document.getElementById(id));
-  btns.forEach(b => { b.disabled = true; b.classList.add('opacity-50'); });
-  showMsg('Import aus „' + source + '" läuft … bitte warten.', true);
-  try {
-    const res = await fetch('/vocabulary/import?source=' + source, {method: 'POST'});
-    const json = await res.json().catch(() => ({ok:false, error:'Unbekannter Fehler'}));
-    if (json.ok) {
-      showMsg('✓ Import fertig: +' + json.studios + ' Studios, +' + json.performers + ' Performer.', true);
-      loadVocabStats();
-    } else {
-      showMsg('✗ ' + (json.error || 'Import fehlgeschlagen'), false);
-    }
-  } catch (e) {
-    showMsg('✗ Import fehlgeschlagen: ' + e, false);
-  } finally {
-    btns.forEach(b => { b.disabled = false; b.classList.remove('opacity-50'); });
-  }
+  const res = await fetch('/vocabulary/import?source=' + source, {method: 'POST'});
+  const json = await res.json().catch(() => ({ok:false}));
+  if (!json.ok) { showMsg('✗ ' + (json.error || 'Start fehlgeschlagen'), false); return; }
+  setImportRunning(true);
+  showMsg('Import aus „' + source + '" gestartet — läuft im Hintergrund.', true);
+  pollImport();
 }
 
-loadVocabStats();
+function pollImport() {
+  if (vocabPoll) clearInterval(vocabPoll);
+  vocabPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/vocabulary/import/status');
+      const s = await r.json();
+      document.getElementById('vocab-studios').textContent = s.total_studios;
+      document.getElementById('vocab-perfs').textContent = s.total_performers;
+      document.getElementById('vocab-progress').textContent =
+        '⏳ ' + (s.source || '') + ': ' + s.total_studios + ' Studios, ' + s.total_performers + ' Performer bisher …';
+      if (!s.running) {
+        clearInterval(vocabPoll); vocabPoll = null;
+        setImportRunning(false);
+        if (s.error) showMsg('✗ ' + s.error, false);
+        else showMsg('✓ Import fertig: ' + s.total_studios + ' Studios, ' + s.total_performers + ' Performer bekannt.', true);
+      }
+    } catch (e) {}
+  }, 2000);
+}
+
+async function stopImport() {
+  await fetch('/vocabulary/import/stop', {method: 'POST'});
+  showMsg('Stop angefordert … (laufende Seite wird noch beendet)', true);
+}
+
+// On load: resume polling if an import is already running (e.g. page reload)
+(async () => {
+  await loadVocabStats();
+  try {
+    const s = await (await fetch('/vocabulary/import/status')).json();
+    if (s.running) { setImportRunning(true); pollImport(); }
+  } catch (e) {}
+})();
 </script>
 
 {% endblock %}

@@ -741,10 +741,27 @@ class TestVocabularyRoutes:
                 html = c.get("/settings/pre-check").text
         assert "Aus StashApp" in html and "Aus StashDB" in html and "Aus ThePornDB" in html
 
-    def test_import_missing_key_graceful(self, tmp_path):
+    def test_import_runs_in_background_and_reports_error(self, tmp_path):
+        import time
         app = self._app(tmp_path)
         with patch("namer_helper.web.app._check_system_deps"), \
              patch("namer_helper.web.app._is_moondream_available", return_value=False):
             with TestClient(app, raise_server_exceptions=False) as c:
+                # Start returns immediately (background job)
                 r = c.post("/vocabulary/import?source=tpdb").json()
-        assert r["ok"] is False and "Key" in r["error"]
+                assert r["ok"] is True and r["started"] is True
+                # Job finishes fast (no key) → error surfaces in the status
+                for _ in range(20):
+                    s = c.get("/vocabulary/import/status").json()
+                    if s["done"]:
+                        break
+                    time.sleep(0.05)
+                assert s["done"] is True
+                assert "Key" in (s["error"] or "")
+
+    def test_import_stop_route(self, tmp_path):
+        app = self._app(tmp_path)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                assert c.post("/vocabulary/import/stop").json()["ok"] is True

@@ -2389,36 +2389,70 @@ def create_app(
 
     # ── Vocabulary import (Studio/Performer-Wortschatz) ───────────────────────
 
+    # Background vocabulary-import state (cloud sources can be huge → no blocking)
+    _vocab_job = {"running": False, "source": None, "stop": False,
+                  "studios": 0, "performers": 0, "error": None, "done": False}
+
     @app.get("/vocabulary/stats")
     async def vocabulary_stats():
         from namer_helper import vocabulary
         vocab = vocabulary.load(helper_config_dir)
         return {"studios": len(vocab.studios), "performers": len(vocab.performers)}
 
-    @app.post("/vocabulary/import")
-    async def vocabulary_import(source: str):
-        """Wortschatz aus einer Quelle (stash/stashdb/tpdb) befüllen.
-        Läuft in einem Thread, damit der Event-Loop nicht blockiert."""
+    def _run_vocab_import(source: str) -> None:
         from namer_helper import vocab_import
         ai = load_ai_config(helper_config_dir)
-        loop = asyncio.get_running_loop()
-
-        def run():
-            if source == "stash":
-                return vocab_import.import_from_stash(
-                    helper_config_dir, url=ai.stash_url, api_key=ai.stash_api_key)
-            if source == "stashdb":
-                return vocab_import.import_from_stashdb(
-                    helper_config_dir, api_key=ai.stashdb_api_key)
-            if source == "tpdb":
-                return vocab_import.import_from_tpdb(
-                    helper_config_dir, api_key=ai.theporndb_api_key)
-            return {"studios": 0, "performers": 0, "error": "Unbekannte Quelle"}
-
+        stop = lambda: _vocab_job["stop"]
         try:
-            res = await loop.run_in_executor(None, run)
-            return {"ok": res["error"] is None, **res}
+            if source == "stash":
+                res = vocab_import.import_from_stash(
+                    helper_config_dir, url=ai.stash_url, api_key=ai.stash_api_key, should_stop=stop)
+            elif source == "stashdb":
+                res = vocab_import.import_from_stashdb(
+                    helper_config_dir, api_key=ai.stashdb_api_key, should_stop=stop)
+            elif source == "tpdb":
+                res = vocab_import.import_from_tpdb(
+                    helper_config_dir, api_key=ai.theporndb_api_key, should_stop=stop)
+            else:
+                res = {"studios": 0, "performers": 0, "error": "Unbekannte Quelle"}
+            _vocab_job.update(studios=res.get("studios", 0), performers=res.get("performers", 0),
+                              error=res.get("error"))
         except Exception as exc:
-            return {"ok": False, "studios": 0, "performers": 0, "error": str(exc)}
+            _vocab_job["error"] = str(exc)
+        finally:
+            _vocab_job["running"] = False
+            _vocab_job["done"] = True
+
+    @app.post("/vocabulary/import")
+    async def vocabulary_import(source: str):
+        """Startet den Wortschatz-Import als Hintergrund-Job (nicht blockierend)."""
+        if _vocab_job["running"]:
+            return {"ok": False, "error": "Ein Import läuft bereits", "running": True,
+                    "source": _vocab_job["source"]}
+        _vocab_job.update(running=True, source=source, stop=False,
+                          studios=0, performers=0, error=None, done=False)
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _run_vocab_import, source)
+        return {"ok": True, "started": True, "source": source}
+
+    @app.get("/vocabulary/import/status")
+    async def vocabulary_import_status():
+        from namer_helper import vocabulary
+        vocab = vocabulary.load(helper_config_dir)
+        return {
+            "running": _vocab_job["running"],
+            "source": _vocab_job["source"],
+            "done": _vocab_job["done"],
+            "error": _vocab_job["error"],
+            "added_studios": _vocab_job["studios"],
+            "added_performers": _vocab_job["performers"],
+            "total_studios": len(vocab.studios),
+            "total_performers": len(vocab.performers),
+        }
+
+    @app.post("/vocabulary/import/stop")
+    async def vocabulary_import_stop():
+        _vocab_job["stop"] = True
+        return {"ok": True}
 
     return app

@@ -28,6 +28,11 @@ _STASHDB_URL = "https://stashdb.org/graphql"
 _TPDB_REST = "https://api.theporndb.net"
 
 ProgressFn = Callable[[str], None]
+StopFn = Callable[[], bool]
+
+
+def _never() -> bool:
+    return False
 
 
 def _noop(_: str) -> None:
@@ -43,6 +48,7 @@ _STASH_PERFORMERS = "query($f:FindFilterType!){ findPerformers(filter:$f){ count
 def import_from_stash(
     config_dir: Path, *, url: str, api_key: str = "", timeout: int = 30,
     per_page: int = 200, max_pages: int = 100000, progress: ProgressFn = _noop,
+    should_stop: StopFn = _never,
 ) -> dict:
     from namer_helper.stash_bridge.client import StashClient, StashError
     client = StashClient(url=url, api_key=api_key, timeout=timeout)
@@ -58,6 +64,8 @@ def import_from_stash(
             sub = "studios" if kind == "studios" else "performers"
             page = 1
             while page <= max_pages:
+                if should_stop():
+                    return {"studios": new_studios, "performers": new_perfs, "error": None, "stopped": True}
                 data = client.query(query, {"f": {"per_page": per_page, "page": page}})
                 block = (data or {}).get(key) or {}
                 names = [n.get("name") for n in (block.get(sub) or []) if n.get("name")]
@@ -86,6 +94,7 @@ _STASHDB_PERFORMERS = "query($i:PerformerQueryInput!){ queryPerformers(input:$i)
 def import_from_stashdb(
     config_dir: Path, *, api_key: str, per_page: int = 100,
     max_pages: int = 100000, progress: ProgressFn = _noop,
+    should_stop: StopFn = _never,
 ) -> dict:
     if not api_key:
         return {"studios": 0, "performers": 0, "error": "StashDB API-Key fehlt"}
@@ -99,6 +108,8 @@ def import_from_stashdb(
             sub = "studios" if kind == "studios" else "performers"
             page = 1
             while page <= max_pages:
+                if should_stop():
+                    return {"studios": new_studios, "performers": new_perfs, "error": None, "stopped": True}
                 r = requests.post(_STASHDB_URL, json={"query": query,
                     "variables": {"i": {"page": page, "per_page": per_page}}},
                     headers=headers, timeout=30)
@@ -129,7 +140,7 @@ def import_from_stashdb(
 
 def import_from_tpdb(
     config_dir: Path, *, api_key: str, max_pages: int = 100000,
-    progress: ProgressFn = _noop,
+    progress: ProgressFn = _noop, should_stop: StopFn = _never,
 ) -> dict:
     if not api_key:
         return {"studios": 0, "performers": 0, "error": "ThePornDB API-Key fehlt"}
@@ -139,6 +150,8 @@ def import_from_tpdb(
         for path, kind in (("/sites", "studios"), ("/performers", "performers")):
             page = 1
             while page <= max_pages:
+                if should_stop():
+                    return {"studios": new_studios, "performers": new_perfs, "error": None, "stopped": True}
                 r = requests.get(f"{_TPDB_REST}{path}", params={"page": page},
                                  headers=headers, timeout=30)
                 r.raise_for_status()
