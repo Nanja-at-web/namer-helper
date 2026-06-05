@@ -665,3 +665,30 @@ class TestLargeListCapping:
                 html = c.get("/pre-check").text
         assert "nur die ersten" in html
         assert f"{_MAX_LIST_ROWS + 50}" in html
+
+
+class TestScanAll:
+    """Server-side scan-all must cover EVERY file, not just the rendered cap."""
+
+    def test_scan_all_enumerates_full_dir(self, tmp_path, monkeypatch):
+        import json as _json
+        from namer_helper.web import scan_status
+        monkeypatch.setattr(scan_status, "STATUS_DIR", tmp_path / "scan")
+        monkeypatch.setattr(scan_status, "STATUS_FILE", tmp_path / "scan" / "pre-check.json")
+        pre = tmp_path / "pre"; pre.mkdir()
+        for i in range(7):
+            (pre / f"p{i}.mp4").write_bytes(b"x" * 1100)
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text("[watchdog]\nfailed_dir=/f\nwatch_dir=/w\nwork_dir=/wk\ndest_dir=/d\n")
+        reports = tmp_path / "reports"; reports.mkdir()
+        config = tmp_path / "config"; config.mkdir()
+        (config / "ai_config.json").write_text(_json.dumps({
+            "pre_check_dir": str(pre), "ollama_url": "", "ollama_model": "llama3",
+            "stashdb_api_key": "", "theporndb_api_key": ""}))
+        app = create_app(cfg, reports, config)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                r = c.post("/pre-check/scan/start-all").json()
+        assert r["ok"] is True
+        assert r["count"] == 7  # full directory, independent of render cap

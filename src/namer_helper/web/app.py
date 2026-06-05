@@ -1810,6 +1810,22 @@ def create_app(
         asyncio.create_task(_run_pre_check_scan(state["scan_id"], clean_names))
         return {"ok": True, "scan": state}
 
+    @app.post("/pre-check/scan/start-all")
+    async def pre_check_scan_start_all():
+        """Scan EVERY file in the pre-check dir server-side — independent of the
+        rendered (capped) row list. Fixes: only the first 500 were selectable."""
+        from namer_helper.web import scan_status
+        pre_dir = _get_pre_check_dir()
+        names = [f["name"] for f in _list_pre_check_files(pre_dir)]
+        if not names:
+            return {"ok": False, "error": "Keine Dateien gefunden"}
+        current = scan_status.load()
+        if current.get("active") or current.get("status") in {"paused", "pause_requested"}:
+            return {"ok": False, "error": "Ein Scan läuft bereits", "scan": current}
+        state = scan_status.start(names)
+        asyncio.create_task(_run_pre_check_scan(state["scan_id"], names))
+        return {"ok": True, "scan": state, "count": len(names)}
+
     @app.post("/pre-check/scan/pause")
     async def pre_check_scan_pause():
         from namer_helper.web import scan_status
