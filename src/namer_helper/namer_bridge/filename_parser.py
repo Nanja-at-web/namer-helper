@@ -24,6 +24,7 @@ from namer_helper.normalize import normalize as _normalize
 
 if TYPE_CHECKING:
     from namer_helper.aliases import Aliases
+    from namer_helper.vocabulary import Vocabulary
 
 
 _TECH_RE = re.compile(
@@ -74,7 +75,11 @@ class FilenameInfo:
     confidence: float = 0.0
 
 
-def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
+def parse_filename(
+    name: str,
+    aliases: "Aliases | None" = None,
+    vocabulary: "Vocabulary | None" = None,
+) -> FilenameInfo:
     info = FilenameInfo()
     stem = Path(name).stem  # strip video extension
 
@@ -207,6 +212,20 @@ def parse_filename(name: str, aliases: "Aliases | None" = None) -> FilenameInfo:
             info.studio = resolve_studio(info.studio, aliases)
         if info.performers:
             info.performers = [resolve_performer(p, aliases) for p in info.performers]
+
+    # Known-vocabulary correction: a "performer" that is actually a known studio
+    # is moved out of performers (and used as the studio if none was found).
+    # Prevents misclassifying studio names like "Evil Angel" / "ATKGalleria".
+    if vocabulary is not None and info.performers:
+        kept_perfs, studio_from_perfs = [], None
+        for p in info.performers:
+            if vocabulary.is_studio(p) and not vocabulary.is_performer(p):
+                studio_from_perfs = studio_from_perfs or (vocabulary.studio_display(p) or p)
+            else:
+                kept_perfs.append(p)
+        info.performers = kept_perfs
+        if studio_from_perfs and not (info.studio and vocabulary.is_studio(info.studio)):
+            info.studio = studio_from_perfs
 
     # Confidence: how much structure did we find?
     score = 0.15

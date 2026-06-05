@@ -1182,7 +1182,9 @@ def create_app(
             # Runtime aliases: /etc/namer-helper/aliases.json (same path learn() writes to).
             # Falls back to package defaults if the file doesn't exist yet.
             aliases = load_aliases(helper_config_dir / "aliases.json")
-            parsed = parse_filename(source_name, aliases=aliases)
+            from namer_helper import vocabulary as _vocab
+            vocab = _vocab.load(helper_config_dir)
+            parsed = parse_filename(source_name, aliases=aliases, vocabulary=vocab)
             jav_code = detect_jav(source_name)
             ext = Path(source_name).suffix
             hashes: dict = {"phash": None, "oshash": None, "duration": None, "resolution": None, "ocr_text": ""}
@@ -1693,6 +1695,21 @@ def create_app(
                 "confidence": parsed.confidence,
                 "jav_code": jav_code.code if jav_code else None,
             }
+
+            # Harvest known studios/performers from real DB hits (self-learning
+            # vocabulary). Best-effort — never blocks the lookup.
+            try:
+                harvest_studios, harvest_perfs = [], []
+                for sc in (stashdb_scenes + tpdb_scenes):
+                    site = sc.get("site") or sc.get("studio") or sc.get("network")
+                    if site:
+                        harvest_studios.append(site)
+                    harvest_perfs.extend(sc.get("performers") or [])
+                if harvest_studios or harvest_perfs:
+                    _vocab.learn(helper_config_dir, studios=harvest_studios, performers=harvest_perfs)
+            except Exception:
+                pass
+
             identification = build_identification(
                 original_name=source_name,
                 stashdb_scenes=stashdb_scenes,
