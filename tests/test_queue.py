@@ -491,3 +491,32 @@ class TestQueuePage:
     def test_queue_page_in_nav(self, client):
         r = client.get("/queue")
         assert 'href="/queue"' in r.text
+
+
+class TestClearAndReset:
+    """clear-resolved removes only decided items; reset clears everything."""
+
+    def test_clear_all_module(self, tmp_path):
+        p = tmp_path / "q.json"
+        for n in ("a", "b", "c"):
+            q.enqueue(p, name=f"{n}.mp4", identification=_ident())
+        assert q.clear_all(p) == 3
+        assert q.load_queue(p) == []
+
+    def test_clear_resolved_keeps_pending(self, client, dirs):
+        qp = dirs["config"] / "review-queue.json"
+        for n in ("a", "b", "c"):
+            q.enqueue(qp, name=f"{n}.mp4", identification=_ident())
+        q.set_status(qp, "c.mp4", q.CONFIRMED)
+        r = client.post("/pre-check/queue/clear-resolved").json()
+        assert r["removed"] == 1                      # only the confirmed one
+        names = {i.name for i in q.load_queue(qp)}
+        assert names == {"a.mp4", "b.mp4"}            # pending review kept
+
+    def test_reset_clears_everything(self, client, dirs):
+        qp = dirs["config"] / "review-queue.json"
+        for n in ("a", "b", "c"):
+            q.enqueue(qp, name=f"{n}.mp4", identification=_ident())
+        r = client.post("/pre-check/queue/reset").json()
+        assert r["ok"] is True and r["removed"] == 3
+        assert q.load_queue(qp) == []

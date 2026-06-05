@@ -271,3 +271,15 @@ def remove_resolved(path: Path) -> int:
     if removed:
         save_queue(path, kept)
     return removed
+
+
+def clear_all(path: Path) -> int:
+    """Remove EVERY queue entry (full reset). Returns how many were removed.
+
+    Used to start a fresh scan from scratch — does NOT touch any files, only
+    the queue's decision records.
+    """
+    count = len(load_queue(path))
+    if count:
+        save_queue(path, [])
+    return count

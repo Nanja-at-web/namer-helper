@@ -42,8 +42,14 @@
       📋 Alle {{ summary.eligible_rule }} Rule → watch/
     </button>
     <button onclick="clearResolved()"
-      class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded">
-      Liste aufräumen
+      class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm px-3 py-2 rounded"
+      title="Bereits bestätigte/aussortierte Einträge aus der Queue-Datei entfernen (Aufräumen)">
+      Erledigte entfernen
+    </button>
+    <button onclick="resetQueue()"
+      class="bg-red-50 hover:bg-red-100 text-red-700 text-sm px-3 py-2 rounded border border-red-200"
+      title="Alle Queue-Einträge löschen — für einen frischen Scan. Dateien bleiben unberührt.">
+      Queue zurücksetzen
     </button>
   </div>
   <div class="text-xs text-gray-400 mt-2">
@@ -185,7 +191,29 @@ async function confirmBatch(source) {
 async function clearResolved() {
   const res = await fetch('/pre-check/queue/clear-resolved', {method: 'POST'});
   const json = await res.json().catch(() => ({ok: false}));
-  if (json.ok) { showMsg(json.removed + ' erledigte Einträge entfernt.', true); setTimeout(() => location.reload(), 700); }
+  if (!json.ok) { showMsg('✗ Aufräumen fehlgeschlagen', false); return; }
+  if (json.removed > 0) {
+    showMsg('✓ ' + json.removed + ' erledigte (bestätigte/aussortierte) Einträge entfernt.', true);
+    setTimeout(() => location.reload(), 900);
+  } else {
+    // Nothing to clean — explain why the visible review list is unchanged
+    showMsg('Keine erledigten Einträge vorhanden. Die offenen Review-Fälle bleiben — ' +
+            'zum Leeren der ganzen Queue „Queue zurücksetzen" nutzen.', true);
+  }
+}
+
+async function resetQueue() {
+  if (!confirm('Die GESAMTE Queue zurücksetzen (alle Einträge löschen)?\n\n' +
+              'Dateien bleiben unberührt — nur die Analyse-/Entscheidungs-Einträge ' +
+              'werden entfernt. Danach kannst du im Pre-Check neu analysieren.')) return;
+  const res = await fetch('/pre-check/queue/reset', {method: 'POST'});
+  const json = await res.json().catch(() => ({ok: false}));
+  if (json.ok) {
+    showMsg('✓ Queue zurückgesetzt (' + json.removed + ' Einträge entfernt).', true);
+    setTimeout(() => location.reload(), 900);
+  } else {
+    showMsg('✗ Zurücksetzen fehlgeschlagen', false);
+  }
 }
 </script>
 

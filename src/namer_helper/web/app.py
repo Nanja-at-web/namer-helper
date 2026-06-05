@@ -2229,6 +2229,14 @@ def create_app(
         removed = review_queue.remove_resolved(_queue_path())
         return {"ok": True, "removed": removed}
 
+    @app.post("/pre-check/queue/reset")
+    async def pre_check_queue_reset():
+        """Queue komplett leeren (alle Einträge) — für einen frischen Scan.
+        Verschiebt/löscht KEINE Dateien, nur die Entscheidungs-Einträge."""
+        from namer_helper import queue as review_queue
+        removed = review_queue.clear_all(_queue_path())
+        return {"ok": True, "removed": removed}
+
     # ── AI lookup for failed files ────────────────────────────────────────────
 
     @app.post("/failed/lookup")
