@@ -520,3 +520,17 @@ class TestClearAndReset:
         r = client.post("/pre-check/queue/reset").json()
         assert r["ok"] is True and r["removed"] == 3
         assert q.load_queue(qp) == []
+
+
+class TestQueueVideoPlayer:
+    """Queue rows have a play button to verify the video before deciding."""
+
+    def test_play_button_and_modal_present(self, client, dirs):
+        qp = dirs["config"] / "review-queue.json"
+        q.enqueue(qp, name="a.mp4", identification=_ident(
+            status="likely", confidence=0.76, source="ThePornDB Kontextsuche",
+            action="review", suggested="X.mp4"))
+        html = client.get("/queue").text
+        assert "openPlayer(" in html
+        assert 'id="videoModal"' in html
+        assert "/pre-check/video?name=" in html
