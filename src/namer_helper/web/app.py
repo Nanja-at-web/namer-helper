@@ -2378,9 +2378,47 @@ def create_app(
                 cfg.pre_check_dir = body["pre_check_dir"].strip() or "/var/lib/namer/pre-check"
             if "aussortiert_dir" in body:
                 cfg.aussortiert_dir = body["aussortiert_dir"].strip()
+            if "stash_url" in body:
+                cfg.stash_url = body["stash_url"].strip() or "http://localhost:9999"
+            if "stash_api_key" in body:
+                cfg.stash_api_key = body["stash_api_key"].strip()
             save_ai_config(helper_config_dir, cfg)
             return {"ok": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    # ── Vocabulary import (Studio/Performer-Wortschatz) ───────────────────────
+
+    @app.get("/vocabulary/stats")
+    async def vocabulary_stats():
+        from namer_helper import vocabulary
+        vocab = vocabulary.load(helper_config_dir)
+        return {"studios": len(vocab.studios), "performers": len(vocab.performers)}
+
+    @app.post("/vocabulary/import")
+    async def vocabulary_import(source: str):
+        """Wortschatz aus einer Quelle (stash/stashdb/tpdb) befüllen.
+        Läuft in einem Thread, damit der Event-Loop nicht blockiert."""
+        from namer_helper import vocab_import
+        ai = load_ai_config(helper_config_dir)
+        loop = asyncio.get_running_loop()
+
+        def run():
+            if source == "stash":
+                return vocab_import.import_from_stash(
+                    helper_config_dir, url=ai.stash_url, api_key=ai.stash_api_key)
+            if source == "stashdb":
+                return vocab_import.import_from_stashdb(
+                    helper_config_dir, api_key=ai.stashdb_api_key)
+            if source == "tpdb":
+                return vocab_import.import_from_tpdb(
+                    helper_config_dir, api_key=ai.theporndb_api_key)
+            return {"studios": 0, "performers": 0, "error": "Unbekannte Quelle"}
+
+        try:
+            res = await loop.run_in_executor(None, run)
+            return {"ok": res["error"] is None, **res}
+        except Exception as exc:
+            return {"ok": False, "studios": 0, "performers": 0, "error": str(exc)}
 
     return app

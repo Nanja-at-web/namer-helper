@@ -26,6 +26,9 @@ class AIConfig:
     # (kleine LXC-Disk). Auf eine NAS zeigen lassen, damit der Container nicht
     # vollläuft, z.B. /mnt/nas/aussortiert.
     aussortiert_dir: str = ""
+    # Lokale StashApp (für Wortschatz-Import "stash" und stash-search)
+    stash_url: str = "http://localhost:9999"
+    stash_api_key: str = ""
 
 
 def load_ai_config(config_dir: Path) -> AIConfig:
@@ -39,6 +42,8 @@ def load_ai_config(config_dir: Path) -> AIConfig:
             ollama_model=data.get("ollama_model", "llama3"),
             pre_check_dir=data.get("pre_check_dir", "/var/lib/namer/pre-check"),
             aussortiert_dir=data.get("aussortiert_dir", ""),
+            stash_url=data.get("stash_url", "http://localhost:9999"),
+            stash_api_key=data.get("stash_api_key", ""),
         )
     except Exception:
         return AIConfig()

@@ -706,3 +706,45 @@ class TestScanAll:
                 r = c.post("/pre-check/scan/start-all").json()
         assert r["ok"] is True
         assert r["count"] == 7  # full directory, independent of render cap
+
+
+class TestVocabularyRoutes:
+    """WebUI vocabulary import + stats."""
+
+    def _app(self, tmp_path, **ai):
+        import json as _json
+        from namer_helper import vocabulary
+        cfg = tmp_path / "namer.cfg"
+        cfg.write_text("[watchdog]\nfailed_dir=/f\nwatch_dir=/w\nwork_dir=/wk\ndest_dir=/d\n")
+        reports = tmp_path / "reports"; reports.mkdir()
+        config = tmp_path / "config"; config.mkdir()
+        base = {"pre_check_dir": str(tmp_path / "pre"), "ollama_url": "",
+                "ollama_model": "llama3", "stashdb_api_key": "", "theporndb_api_key": ""}
+        base.update(ai)
+        (config / "ai_config.json").write_text(_json.dumps(base))
+        vocabulary.learn(config, studios=["Evil Angel"], performers=["Jane Doe"])
+        return create_app(cfg, reports, config)
+
+    def test_stats(self, tmp_path):
+        app = self._app(tmp_path)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                j = c.get("/vocabulary/stats").json()
+        assert j["studios"] == 1 and j["performers"] == 1
+
+    def test_import_buttons_in_settings(self, tmp_path):
+        app = self._app(tmp_path)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                html = c.get("/settings/pre-check").text
+        assert "Aus StashApp" in html and "Aus StashDB" in html and "Aus ThePornDB" in html
+
+    def test_import_missing_key_graceful(self, tmp_path):
+        app = self._app(tmp_path)
+        with patch("namer_helper.web.app._check_system_deps"), \
+             patch("namer_helper.web.app._is_moondream_available", return_value=False):
+            with TestClient(app, raise_server_exceptions=False) as c:
+                r = c.post("/vocabulary/import?source=tpdb").json()
+        assert r["ok"] is False and "Key" in r["error"]

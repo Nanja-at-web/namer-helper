@@ -42,11 +42,40 @@
   Pfade speichern
 </button>
 
+<!-- Wortschatz (Studios/Performer) -->
+<div class="bg-white rounded-lg shadow p-6 my-6">
+  <h2 class="font-semibold text-gray-800 mb-1">📚 Studio-/Performer-Wortschatz</h2>
+  <p class="text-sm text-gray-500 mb-3">
+    Bekannte Studios/Performer verhindern Verwechslungen bei der Erkennung. Der Wortschatz
+    lernt automatisch aus jedem Treffer — hier kannst du ihn <b>vorab</b> aus einer Quelle füllen.
+    Bekannt: <b><span id="vocab-studios">…</span></b> Studios, <b><span id="vocab-perfs">…</span></b> Performer.
+  </p>
+  <div class="max-w-lg mb-4">
+    <label class="block text-xs font-medium text-gray-500 mb-1">Lokale StashApp-URL (für „Aus StashApp")</label>
+    <input id="s-stash-url" type="text" value="{{ ai_cfg.stash_url }}"
+      placeholder="http://localhost:9999"
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    <p class="text-xs text-gray-400 mt-1">StashDB-/ThePornDB-Keys kommen vom Tab „KI & API".</p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <button onclick="importVocab('stash')" id="vb-stash"
+      class="bg-teal-600 hover:bg-teal-700 text-white text-sm px-4 py-2 rounded">Aus StashApp (schnell)</button>
+    <button onclick="importVocab('stashdb')" id="vb-stashdb"
+      class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-4 py-2 rounded">Aus StashDB</button>
+    <button onclick="importVocab('tpdb')" id="vb-tpdb"
+      class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 rounded">Aus ThePornDB</button>
+  </div>
+  <p class="text-xs text-gray-400 mt-2">
+    Cloud-Quellen (StashDB/ThePornDB) können je nach Größe etwas dauern — bitte warten, nicht mehrfach klicken.
+  </p>
+</div>
+
 <script>
 async function savePaths() {
   const data = {
     pre_check_dir:   document.getElementById('s-pre-check-dir').value.trim(),
     aussortiert_dir: document.getElementById('s-aussortiert-dir').value.trim(),
+    stash_url:       document.getElementById('s-stash-url').value.trim(),
   };
   const res = await fetch('/settings', {
     method: 'POST',
@@ -54,11 +83,51 @@ async function savePaths() {
     body: JSON.stringify(data),
   });
   const json = await res.json();
+  showMsg(json.ok ? '✓ Gespeichert.' : '✗ Fehler: ' + json.error, json.ok);
+}
+
+function showMsg(text, ok) {
   const el = document.getElementById('msg');
-  el.textContent = json.ok ? '✓ Pfade gespeichert.' : '✗ Fehler: ' + json.error;
-  el.className = 'mb-4 text-sm rounded p-3 ' + (json.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
+  el.textContent = text;
+  el.className = 'mb-4 text-sm rounded p-3 ' + (ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700');
   el.classList.remove('hidden');
 }
+
+async function loadVocabStats() {
+  try {
+    const r = await fetch('/vocabulary/stats');
+    const j = await r.json();
+    document.getElementById('vocab-studios').textContent = j.studios;
+    document.getElementById('vocab-perfs').textContent = j.performers;
+  } catch (e) {}
+}
+
+async function importVocab(source) {
+  // Save the stash URL first so "stash" uses the current field value
+  if (source === 'stash') {
+    await fetch('/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({stash_url: document.getElementById('s-stash-url').value.trim()})});
+  }
+  const btns = ['vb-stash','vb-stashdb','vb-tpdb'].map(id => document.getElementById(id));
+  btns.forEach(b => { b.disabled = true; b.classList.add('opacity-50'); });
+  showMsg('Import aus „' + source + '" läuft … bitte warten.', true);
+  try {
+    const res = await fetch('/vocabulary/import?source=' + source, {method: 'POST'});
+    const json = await res.json().catch(() => ({ok:false, error:'Unbekannter Fehler'}));
+    if (json.ok) {
+      showMsg('✓ Import fertig: +' + json.studios + ' Studios, +' + json.performers + ' Performer.', true);
+      loadVocabStats();
+    } else {
+      showMsg('✗ ' + (json.error || 'Import fehlgeschlagen'), false);
+    }
+  } catch (e) {
+    showMsg('✗ Import fehlgeschlagen: ' + e, false);
+  } finally {
+    btns.forEach(b => { b.disabled = false; b.classList.remove('opacity-50'); });
+  }
+}
+
+loadVocabStats();
 </script>
 
 {% endblock %}
