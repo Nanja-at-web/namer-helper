@@ -1,0 +1,35 @@
+{# Reusable pagination bar. Requires: pg (from _paginate), page_url.
+   pg = {total, page, pages, per_page, start, end, per_page_options} #}
+{% if pg.total > 0 %}
+<div class="flex flex-wrap items-center gap-3 text-sm text-gray-600 my-3">
+  <span><b>{{ pg.start + 1 }}–{{ pg.end }}</b> von <b>{{ pg.total }}</b></span>
+
+  <span class="flex items-center gap-1">
+    {% if pg.page > 1 %}
+      <a href="{{ page_url }}?page=1&per_page={{ pg.per_page }}" class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">«</a>
+      <a href="{{ page_url }}?page={{ pg.page - 1 }}&per_page={{ pg.per_page }}" class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">‹ Zurück</a>
+    {% else %}
+      <span class="px-2 py-1 rounded bg-gray-50 text-gray-300">«</span>
+      <span class="px-2 py-1 rounded bg-gray-50 text-gray-300">‹ Zurück</span>
+    {% endif %}
+    <span class="px-2">Seite <b>{{ pg.page }}</b> / {{ pg.pages }}</span>
+    {% if pg.page < pg.pages %}
+      <a href="{{ page_url }}?page={{ pg.page + 1 }}&per_page={{ pg.per_page }}" class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">Weiter ›</a>
+      <a href="{{ page_url }}?page={{ pg.pages }}&per_page={{ pg.per_page }}" class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">»</a>
+    {% else %}
+      <span class="px-2 py-1 rounded bg-gray-50 text-gray-300">Weiter ›</span>
+      <span class="px-2 py-1 rounded bg-gray-50 text-gray-300">»</span>
+    {% endif %}
+  </span>
+
+  <label class="flex items-center gap-1 ml-auto">
+    pro Seite
+    <select onchange="location.href='{{ page_url }}?page=1&per_page=' + this.value"
+            class="border border-gray-300 rounded px-2 py-1 text-sm">
+      {% for opt in pg.per_page_options %}
+      <option value="{{ opt }}" {% if opt == pg.per_page %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>
+{% endif %}

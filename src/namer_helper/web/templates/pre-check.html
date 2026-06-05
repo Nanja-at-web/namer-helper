@@ -5,25 +5,15 @@
 
 {% set active_wf = 'dateien' %}{% include "workflow_tabs.html" %}
 
-{% if total > shown %}
-<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3 mb-4">
-  ⚠ Sehr viele Dateien — es werden nur die ersten <b>{{ shown }}</b> von
-  <b>{{ total }}</b> angezeigt (sonst stürzt der Browser ab). Alle bereits
-  analysierten Ergebnisse findest du in der
-  <a href="/queue" class="underline font-medium">Queue</a>. Mit dem Filter
-  unten kannst du die Liste eingrenzen.
-</div>
-{% endif %}
-
 <div class="flex items-center justify-between mb-6">
   <div class="flex items-center gap-3">
-    <span class="text-gray-500 text-sm">{{ total }} Dateien</span>
+    <span class="text-gray-500 text-sm">{{ pg.total }} Dateien</span>
   </div>
   {% if files %}
   <div class="flex gap-2">
     <button onclick="scanAll()"
       class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-4 py-2 rounded font-medium">
-      🔍 Alle {{ total }} analysieren
+      🔍 Alle {{ pg.total }} analysieren
     </button>
     <button onclick="lookupSelected()"
       class="bg-purple-100 hover:bg-purple-200 text-purple-700 text-sm px-4 py-2 rounded font-medium">
@@ -133,6 +123,8 @@
     class="hidden text-xs text-gray-400 hover:text-gray-600 underline">✕ Zurücksetzen</button>
 </div>
 
+{% include "_pagination.html" %}
+
 <div class="bg-white rounded-lg shadow overflow-hidden">
   <table class="w-full text-sm">
     <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -228,6 +220,8 @@
     </tbody>
   </table>
 </div>
+
+{% include "_pagination.html" %}
 {% elif dir_exists %}
 <div class="bg-white rounded-lg shadow p-8 text-center text-gray-400">
   Keine Videodateien im Pre-Check-Verzeichnis.
@@ -460,7 +454,7 @@ async function lookupSelected() {
 }
 
 async function scanAll() {
-  if (!confirm('Alle {{ total }} Dateien analysieren?\nLäuft im Hintergrund — der Fortschritt erscheint oben, ' +
+  if (!confirm('Alle {{ pg.total }} Dateien analysieren?\nLäuft im Hintergrund — der Fortschritt erscheint oben, ' +
               'die Ergebnisse landen in der Queue. Du kannst pausieren/stoppen.')) return;
   document.getElementById('bulk-progress').classList.remove('hidden');
   document.getElementById('action-msg').classList.add('hidden');

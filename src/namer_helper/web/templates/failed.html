@@ -7,16 +7,11 @@
   <div class="flex items-center gap-3">
     <a href="/" class="text-gray-400 hover:text-gray-600 text-sm">← Dashboard</a>
     <h1 class="text-2xl font-bold text-gray-800">failed/</h1>
-    <span class="text-gray-400 text-sm">({{ total }} Dateien)</span>
+    <span class="text-gray-400 text-sm">({{ pg.total }} Dateien)</span>
   </div>
 </div>
 
-{% if total > shown %}
-<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3 mb-4">
-  ⚠ Sehr viele Dateien — es werden aus Performance-Gründen nur die ersten
-  <b>{{ shown }}</b> von <b>{{ total }}</b> angezeigt.
-</div>
-{% endif %}
+{% include "_pagination.html" %}
 
 <!-- Retry-Steuerung -->
 <div class="bg-white rounded-lg shadow p-5 mb-6">
@@ -96,6 +91,8 @@
     </tbody>
   </table>
 </div>
+
+{% include "_pagination.html" %}
 {% else %}
 <div class="bg-white rounded-lg shadow p-8 text-center text-gray-400">
   Keine fehlgeschlagenen Dateien vorhanden.

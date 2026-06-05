@@ -36,9 +36,35 @@ _SERVICE = "namer-watchdog"
 _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv"}
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _SCAN_ITEM_TIMEOUT_SECONDS = 600
-# Max rows rendered into a single HTML page. Tens of thousands of rows crash
-# the browser; the server still knows the true total and shows it.
-_MAX_LIST_ROWS = 500
+# Page-size bounds for paginated lists. Rendering tens of thousands of rows
+# crashes the browser, so per_page is clamped; the user picks within this range.
+_DEFAULT_PER_PAGE = 500
+_MIN_PER_PAGE = 50
+_MAX_PER_PAGE = 2000
+_PER_PAGE_OPTIONS = (100, 250, 500, 1000, 2000)
+
+
+def _paginate(items: list, page: int, per_page: int) -> dict:
+    """Slice items for a page. Returns the slice plus navigation metadata.
+
+    per_page is clamped to [_MIN_PER_PAGE, _MAX_PER_PAGE] so a user can't crash
+    the browser by requesting everything at once.
+    """
+    total = len(items)
+    per_page = max(_MIN_PER_PAGE, min(int(per_page or _DEFAULT_PER_PAGE), _MAX_PER_PAGE))
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), pages))
+    start = (page - 1) * per_page
+    return {
+        "slice": items[start:start + per_page],
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "per_page": per_page,
+        "start": start,
+        "end": min(start + per_page, total),
+        "per_page_options": _PER_PAGE_OPTIONS,
+    }
 _SINGLE_LOOKUP_TIMEOUT_SECONDS = 600   # keep browser lookup aligned with server-scan per-file timeout
 _NON_TEXT_OLLAMA_MODELS = ("all-minilm", "mxbai-embed", "nomic-embed", "moondream")
 _NAMER_TEMPLATE_RE = re.compile(r"\{([^{}]+)\}")
@@ -542,17 +568,17 @@ def create_app(
     # ── Failed files with actions ────────────────────────────────────────────
 
     @app.get("/failed", response_class=HTMLResponse)
-    async def failed_list(request: Request):
+    async def failed_list(request: Request, page: int = 1, per_page: int = _DEFAULT_PER_PAGE):
         try:
             paths = read_namer_paths(namer_config)
             failed_dir = paths["failed_dir"]
         except Exception:
             failed_dir = Path("/var/lib/namer/failed")
-        all_files = _list_failed_files(failed_dir)
+        pg = _paginate(_list_failed_files(failed_dir), page, per_page)
         return templates.TemplateResponse(request, "failed.html", {
-            "files": all_files[:_MAX_LIST_ROWS],
-            "total": len(all_files),
-            "shown": min(len(all_files), _MAX_LIST_ROWS),
+            "files": pg["slice"],
+            "pg": pg,
+            "page_url": "/failed",
             "retry_time": _read_cfg_value(namer_config, "retry_time"),
         })
 
@@ -1055,13 +1081,13 @@ def create_app(
         return name + original_ext
 
     @app.get("/pre-check", response_class=HTMLResponse)
-    async def pre_check_list(request: Request):
+    async def pre_check_list(request: Request, page: int = 1, per_page: int = _DEFAULT_PER_PAGE):
         pre_dir = _get_pre_check_dir()
-        all_files = _list_pre_check_files(pre_dir)
+        pg = _paginate(_list_pre_check_files(pre_dir), page, per_page)
         return templates.TemplateResponse(request, "pre-check.html", {
-            "files": all_files[:_MAX_LIST_ROWS],
-            "total": len(all_files),
-            "shown": min(len(all_files), _MAX_LIST_ROWS),
+            "files": pg["slice"],
+            "pg": pg,
+            "page_url": "/pre-check",
             "dir_exists": pre_dir.exists(),
             "pre_check_dir": str(pre_dir),
         })
@@ -2125,28 +2151,31 @@ def create_app(
         return review_queue.set_status(_queue_path(), name, review_queue.DEFERRED)
 
     @app.get("/queue", response_class=HTMLResponse)
-    async def queue_page(request: Request):
+    async def queue_page(request: Request, page: int = 1, per_page: int = _DEFAULT_PER_PAGE):
         from namer_helper import queue as review_queue
         items = review_queue.load_queue(_queue_path())
         ordered = review_queue.sort_for_review(items)
         needs_review_all = [i for i in ordered if i.status == review_queue.PENDING and not review_queue.is_batch_eligible(i)]
         deferred_all = [i for i in ordered if i.status == review_queue.DEFERRED]
-        needs_review = [i.to_dict() for i in needs_review_all[:_MAX_LIST_ROWS]]
-        deferred = [i.to_dict() for i in deferred_all[:_MAX_LIST_ROWS]]
+        # Paginate the (potentially huge) review list
+        pg = _paginate(needs_review_all, page, per_page)
+        needs_review = [i.to_dict() for i in pg["slice"]]
+        deferred = [i.to_dict() for i in deferred_all[:_MAX_PER_PAGE]]
         # Batch-eligible split by deterministic source — each list capped for render
         # (the batch-confirm buttons act on the FULL queue server-side, not these rows)
         by_cat = review_queue.batch_eligible_by_category(items)
         eligible_groups = {
-            cat: [i.to_dict() for i in sorted(by_cat[cat], key=lambda x: -x.confidence)[:_MAX_LIST_ROWS]]
+            cat: [i.to_dict() for i in sorted(by_cat[cat], key=lambda x: -x.confidence)[:_MAX_PER_PAGE]]
             for cat in review_queue.ELIGIBLE_CATEGORIES
         }
         return templates.TemplateResponse(request, "queue.html", {
             "summary": review_queue.summary(items),
             "needs_review": needs_review,
             "needs_review_total": len(needs_review_all),
+            "pg": pg,
+            "page_url": "/queue",
             "eligible_groups": eligible_groups,
             "deferred": deferred,
-            "max_rows": _MAX_LIST_ROWS,
         })
 
     @app.get("/pre-check/queue")

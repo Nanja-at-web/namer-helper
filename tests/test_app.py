@@ -624,17 +624,17 @@ class TestSettings:
             assert saved.get("ollama_url") == "http://test:11434"
 
 
-class TestLargeListCapping:
-    """Pages must cap rendered rows so huge libraries don't crash the browser."""
+class TestPagination:
+    """Big lists are paginated: every file is reachable across pages."""
 
     def _make_app(self, tmp_path, n_failed=0, n_pre=0):
         import json as _json
         failed = tmp_path / "failed"; failed.mkdir()
         pre = tmp_path / "pre"; pre.mkdir()
         for i in range(n_failed):
-            (failed / f"f{i}.mp4").write_bytes(b"x" * 1100)
+            (failed / f"f{i:04d}.mp4").write_bytes(b"x" * 1100)
         for i in range(n_pre):
-            (pre / f"p{i}.mp4").write_bytes(b"x" * 1100)
+            (pre / f"p{i:04d}.mp4").write_bytes(b"x" * 1100)
         cfg = tmp_path / "namer.cfg"
         cfg.write_text(f"[watchdog]\nfailed_dir={failed}\nwatch_dir={tmp_path}/w\n"
                        f"work_dir={tmp_path}/wk\ndest_dir={tmp_path}/d\n")
@@ -645,26 +645,40 @@ class TestLargeListCapping:
             "stashdb_api_key": "", "theporndb_api_key": ""}))
         return create_app(cfg, reports, config)
 
-    def test_failed_caps_rows(self, tmp_path):
-        from namer_helper.web.app import _MAX_LIST_ROWS
-        app = self._make_app(tmp_path, n_failed=_MAX_LIST_ROWS + 50)
+    def test_paginate_helper(self):
+        from namer_helper.web.app import _paginate, _MAX_PER_PAGE, _MIN_PER_PAGE
+        items = list(range(1300))
+        p1 = _paginate(items, page=1, per_page=500)
+        assert p1["slice"] == list(range(0, 500))
+        assert p1["pages"] == 3 and p1["page"] == 1
+        p2 = _paginate(items, page=2, per_page=500)
+        assert p2["slice"] == list(range(500, 1000))   # 501–1000 reachable
+        # per_page clamped to safe bounds
+        assert _paginate(items, 1, 999999)["per_page"] == _MAX_PER_PAGE
+        assert _paginate(items, 1, 1)["per_page"] == _MIN_PER_PAGE
+        # page clamped to last
+        assert _paginate(items, 99, 500)["page"] == 3
+
+    def test_failed_second_page_shows_later_files(self, tmp_path):
+        app = self._make_app(tmp_path, n_failed=600)
         with patch("namer_helper.web.app._check_system_deps"), \
              patch("namer_helper.web.app._is_moondream_available", return_value=False):
             with TestClient(app, raise_server_exceptions=False) as c:
-                html = c.get("/failed").text
-        # Rendered rows are capped; the true total is shown in the banner
-        assert html.count('onclick="confirmMove') <= _MAX_LIST_ROWS
-        assert f"{_MAX_LIST_ROWS + 50}" in html  # true total visible
+                page1 = c.get("/failed?page=1&per_page=500").text
+                page2 = c.get("/failed?page=2&per_page=500").text
+        assert "f0000.mp4" in page1 and "f0000.mp4" not in page2
+        assert "f0550.mp4" in page2 and "f0550.mp4" not in page1  # only on page 2
 
-    def test_precheck_caps_rows(self, tmp_path):
-        from namer_helper.web.app import _MAX_LIST_ROWS
-        app = self._make_app(tmp_path, n_pre=_MAX_LIST_ROWS + 50)
+    def test_precheck_pagination_bar_and_total(self, tmp_path):
+        app = self._make_app(tmp_path, n_pre=600)
         with patch("namer_helper.web.app._check_system_deps"), \
              patch("namer_helper.web.app._is_moondream_available", return_value=False):
             with TestClient(app, raise_server_exceptions=False) as c:
                 html = c.get("/pre-check").text
-        assert "nur die ersten" in html
-        assert f"{_MAX_LIST_ROWS + 50}" in html
+                page2 = c.get("/pre-check?page=2&per_page=500").text
+        assert "600 Dateien" in html
+        assert "Seite <b>1</b> / 2" in html
+        assert "p0550.mp4" in page2  # file #550 reachable on page 2
 
 
 class TestScanAll:
